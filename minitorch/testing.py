@@ -2,7 +2,9 @@
 
 from typing import Callable, Generic, Iterable, Tuple, TypeVar
 
-import minitorch.operators as operators
+import minitorch.precision
+
+operators = minitorch.precision.CURRENT_PRECISION
 
 A = TypeVar("A")
 

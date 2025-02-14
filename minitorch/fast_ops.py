@@ -168,7 +168,14 @@ def tensor_map(
         in_shape: Shape,
         in_strides: Strides,
     ) -> None:
-        raise NotImplementedError("Need to include this file from past assignment.")
+        for i in prange(len(out)):
+            out_index = np.zeros(MAX_DIMS, np.int32)
+            in_index = np.zeros(MAX_DIMS, np.int32)
+            to_index(i, out_shape, out_index)
+            broadcast_index(out_index, out_shape, in_shape, in_index)
+            o = index_to_position(out_index, out_strides)
+            j = index_to_position(in_index, in_strides)
+            out[o] = fn(in_storage[j])
 
     return njit(_map, parallel=True)  # type: ignore
 
@@ -207,7 +214,17 @@ def tensor_zip(
         b_shape: Shape,
         b_strides: Strides,
     ) -> None:
-        raise NotImplementedError("Need to include this file from past assignment.")
+        for i in prange(len(out)):
+            out_index = np.zeros(MAX_DIMS, np.int32)
+            a_index = np.zeros(MAX_DIMS, np.int32)
+            b_index = np.zeros(MAX_DIMS, np.int32)
+            to_index(i, out_shape, out_index)
+            o = index_to_position(out_index, out_strides)
+            broadcast_index(out_index, out_shape, a_shape, a_index)
+            j = index_to_position(a_index, a_strides)
+            broadcast_index(out_index, out_shape, b_shape, b_index)
+            k = index_to_position(b_index, b_strides)
+            out[o] = fn(a_storage[j], b_storage[k])
 
     return njit(_zip, parallel=True)  # type: ignore
 
@@ -242,7 +259,37 @@ def tensor_reduce(
         a_strides: Strides,
         reduce_dim: int,
     ) -> None:
-        raise NotImplementedError("Need to include this file from past assignment.")
+        ndim = len(a_shape)
+        # Get the number of elements in the reduction dimension.
+        reduce_size = a_shape[reduce_dim]
+
+        # Loop over every element of the output tensor.
+        # (Assume out is flattened so that its length is the product of out_shape.)
+        total = 1
+        for d in range(len(out_shape)):
+            total *= out_shape[d]
+        for i in prange(total):
+            # Convert flat index i to a multi-index for the output.
+            out_index = np.empty(ndim, dtype=np.int32)
+            to_index(i, out_shape, out_index)
+
+            # Copy the output index to create an index for the input tensor.
+            a_index = out_index.copy()
+
+            # Initialize the accumulator with the first element along the reduction axis.
+            a_index[reduce_dim] = 0
+            pos_a = index_to_position(a_index, a_strides)
+            acc = a_storage[pos_a]
+
+            # Loop over the remaining elements in the reduction axis.
+            for j in range(1, reduce_size):
+                a_index[reduce_dim] = j
+                pos_a = index_to_position(a_index, a_strides)
+                acc = fn(acc, a_storage[pos_a])
+
+            # Write the accumulated result to the output.
+            pos_out = index_to_position(out_index, out_strides)
+            out[pos_out] = acc
 
     return njit(_reduce, parallel=True)  # type: ignore
 
@@ -293,7 +340,27 @@ def _tensor_matrix_multiply(
     a_batch_stride = a_strides[0] if a_shape[0] > 1 else 0
     b_batch_stride = b_strides[0] if b_shape[0] > 1 else 0
 
-    raise NotImplementedError("Need to include this file from past assignment.")
+    iteration_n = a_shape[-1]
+
+    for i in prange(len(out)):
+        out_index = np.zeros(MAX_DIMS, np.int32)
+        to_index(i, out_shape, out_index)
+        o = index_to_position(out_index, out_strides)
+        a_index = np.copy(out_index)
+        b_index = np.zeros(MAX_DIMS, np.int32)
+        a_index[len(out_shape) - 1] = 0
+        b_index[len(out_shape) - 2] = 0
+        b_index[len(out_shape) - 1] = out_index[len(out_shape) - 1]
+        temp_sum = 0
+        for w in range(iteration_n):
+            a_index[len(out_shape) - 1] = w
+            b_index[len(out_shape) - 2] = w
+
+            j = index_to_position(a_index, a_strides)
+            m = index_to_position(b_index, b_strides)
+            temp_sum = temp_sum + a_storage[j] * b_storage[m]
+
+        out[o] = temp_sum
 
 
 tensor_matrix_multiply = njit(_tensor_matrix_multiply, parallel=True)

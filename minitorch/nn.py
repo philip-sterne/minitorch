@@ -35,8 +35,56 @@ def tile(input: Tensor, kernel: Tuple[int, int]) -> Tuple[Tensor, int, int]:
     kh, kw = kernel
     assert height % kh == 0
     assert width % kw == 0
-    # TODO: Implement for Task 4.3.
-    raise NotImplementedError("Need to implement for Task 4.3")
+
+    new_height = height // kh
+    new_width = width // kw
+
+    # First reshape to (B, C, new_height, kh, new_width, kw)
+    t = input.view(batch, channel, new_height, kh, new_width, kw).contiguous()
+    # Permute to (B, C, new_height, new_width, kh, kw)
+    t = t.permute(0, 1, 2, 4, 3, 5).contiguous()
+    # Flatten the kernel dimensions: (B, C, new_height, new_width, kh*kw)
+    t = t.view(batch, channel, new_height, new_width, kh * kw)
+    return t, new_height, new_width
 
 
 # TODO: Implement for Task 4.3.
+def avgpool2d(input: Tensor, kernel: Tuple[int, int]) -> Tensor:
+    """Tiled average pooling 2D.
+
+    Args:
+        input: Tensor of shape (batch, channel, height, width).
+        kernel: Tuple (kh, kw) for the pooling kernel dimensions.
+
+    Returns:
+        A tensor of shape (batch, channel, new_height, new_width) where
+        each output element is the average of a kernel window.
+    """
+    tiled, new_height, new_width = tile(input, kernel)
+    kh, kw = kernel
+    pool_area = kh * kw
+    # Sum over the kernel window (dimension 4) then squeeze that dimension.
+    return tiled.sum(dim=4) / pool_area
+
+
+def dropout(
+    input: Tensor, p: float, train: bool = True, ignore: bool = False
+) -> Tensor:
+    """Apply dropout to the input tensor.
+
+    Args:
+        input: The input tensor.
+        p: Dropout probability (fraction of elements to drop).
+        train: If False, dropout is turned off.
+        ignore: If True, dropout is ignored.
+
+    Returns:
+        The tensor after applying dropout.
+    """
+    if ignore or (not train) or p == 0:
+        return input
+    if p == 1.0:
+        return input.zeros(input.shape)
+    noise = rand(input.shape, backend=input.backend)
+    mask = noise > p
+    return input * mask / (1.0 - p)
