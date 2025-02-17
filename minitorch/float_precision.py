@@ -63,7 +63,7 @@ def inv_back(x: float, y: float) -> float:
     return -y / (x * x)
 
 
-def max(x: float, y: float) -> float:
+def max_(x: float, y: float) -> float: # type: ignore
     return float(x) if x > y else float(y)
 
 
@@ -73,3 +73,28 @@ def lt(x: float, y: float) -> bool:
 
 def eq(x: float, y: float) -> bool:
     return x == y
+
+def map(fn: Callable[[float], float], l: Iterable[float]) -> Iterable[float]:
+    return [fn(x) for x in l]
+
+
+def zipWith(fn: Callable[[float, float], float], l1: Iterable[float], l2: Iterable[float]) -> Iterable[float]:
+    return [fn(x, y) for x, y in zip(l1, l2)]
+
+
+def reduce(fn: Callable[[float, float], float], l: Iterable[float], init: float) -> float:
+    return init if not l else reduce(fn, l[1:], fn(init, l[0])) # type: ignore
+
+
+def sum(l: Iterable[float]) -> float:
+    return reduce(add, l, 0.0)
+
+
+def prod(l: Iterable[float]) -> float:
+    return reduce(mul, l, 1.0)
+
+def zeros(shape: Iterable[int], dtype: Type[T]) -> np.ndarray:
+    return np.zeros(tuple(shape), dtype=float)
+
+def rand(shape: Iterable[int], dtype: Type[T]) -> np.ndarray:
+    return np.random.rand(*shape)

@@ -9,9 +9,6 @@ T = TypeVar("T", float, np.int8)
 # but you will not need to edit this file.
 
 
-type: Type[T]
-
-
 def mul(x: T, y: T) -> T:
     raise NotImplementedError
 
@@ -80,25 +77,34 @@ def eq(x: T, y: T) -> bool:
     raise NotImplementedError
 
 
-def max(x: T, y: T) -> T:
-    return x if x > y else y
+def max_(x: T, y: T) -> T:
+    raise NotImplementedError
 
+# Functional programming functions
 
 def map(fn: Callable[[T], T], l: Iterable[T]) -> Iterable[T]:
-    return [fn(x) for x in l]
+    raise NotImplementedError
 
 
 def zipWith(fn: Callable[[T, T], T], l1: Iterable[T], l2: Iterable[T]) -> Iterable[T]:
-    return [fn(x, y) for x, y in zip(l1, l2)]
+    raise NotImplementedError
 
 
 def reduce(fn: Callable[[T, T], T], l: Iterable[T], init: T) -> T:
-    return init if not l else reduce(fn, l[1:], fn(init, l[0]))
+    raise NotImplementedError
 
 
 def sum(l: Iterable[T]) -> T:
-    return reduce(add, l, T(0))
+    raise NotImplementedError
 
 
 def prod(l: Iterable[T]) -> T:
-    return reduce(mul, l, T(1))
+    raise NotImplementedError
+
+# Array creation functions
+
+def zeros(shape: Iterable[int], dtype: Type[T]) -> np.ndarray:
+    raise NotImplementedError
+
+def rand(shape: Iterable[int], dtype: Type[T]) -> np.ndarray:
+    raise NotImplementedError

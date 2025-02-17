@@ -1,10 +1,11 @@
+import math
 import numpy as np
 import plotly.graph_objects as go
 import streamlit as st
 from project.interface.streamlit_utils import render_function
 from show_tensor import tensor_figure
 
-from minitorch import SimpleBackend, Tensor, index_to_position, operators, to_index
+from minitorch import SimpleBackend, Tensor, index_to_position, to_index
 from minitorch.tensor_data import TensorData
 
 
@@ -225,7 +226,7 @@ def render_tensor_sandbox(hide_function_defs: bool):
         st.text_input("Tensor shape", value="(2, 2, 2)"),
         "Tensor shape must be defined as an in-line tuple, i.e. (2, 2, 2)",
     )
-    tensor_size = int(operators.prod(tensor_shape))
+    tensor_size = int(math.prod(tensor_shape))
     random_tensor = st.checkbox("Fill tensor with random numbers", value=True)
     if random_tensor:
         tensor_data = np.round(rng.rand(tensor_size), 2)

@@ -33,6 +33,7 @@ T = TypeVar("T", float, np.int8)
 # For is_close:
 # $f(x) = |x - y| < 1e-2$
 
+#TODO : I think all need to be converted to current precision
 
 def mul(x: T, y: T) -> T:
     return CURRENT_PRECISION.mul(x, y)
@@ -58,7 +59,7 @@ def eq(x: float, y: float) -> bool:
     return x == y
 
 
-def max(x: float, y: float) -> float:
+def max_(x: float, y: float) -> float:
     return float(x) if x > y else float(y)
 
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import random
 from typing import Iterable, Optional, Sequence, Tuple, Union
 
@@ -8,8 +9,6 @@ import numpy as np
 import numpy.typing as npt
 from numpy import array, float64
 from typing_extensions import TypeAlias
-
-from .operators import prod
 
 MAX_DIMS = 32
 
@@ -162,9 +161,12 @@ class TensorData:
         self._shape = array(shape)
         self.strides = strides
         self.dims = len(strides)
-        self.size = int(prod(shape))
+        self.size = int(math.prod(shape))
         self.shape = shape
-        assert len(self._storage) == self.size
+        # print(self.size, len(self._storage))
+        # print(type(self._storage))
+        # print(dir(self._storage))
+        assert self._storage.size == self.size
 
     def to_cuda_(self) -> None:  # pragma: no cover
         if not numba.cuda.is_cuda_array(self._storage):
@@ -193,6 +195,8 @@ class TensorData:
             aindex: Index = array([index])
         if isinstance(index, tuple):
             aindex = array(index)
+        else:
+            raise IndexingError(f"Index {index} must be int or tuple.")
 
         # Check for errors
         if aindex.shape[0] != len(self.shape):

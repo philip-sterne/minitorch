@@ -14,6 +14,7 @@ import minitorch
 
 from .autodiff import Context
 from .tensor_ops import SimpleBackend, TensorBackend
+from .precision import CURRENT_PRECISION as precision
 
 if TYPE_CHECKING:
     from typing import Any, List, Tuple
@@ -299,7 +300,8 @@ def zeros(shape: UserShape, backend: TensorBackend = SimpleBackend) -> Tensor:
     Returns:
         new tensor
     """
-    return minitorch.Tensor.make([0] * int(math.prod(shape)), shape, backend=backend)
+    vals = precision.zeros(shape)
+    return minitorch.Tensor.make(vals, shape, backend=backend)
 
 
 def rand(
@@ -318,7 +320,7 @@ def rand(
     Returns:
         :class:`Tensor` : new tensor
     """
-    vals = [random.random() for _ in range(int(math.prod(shape)))]
+    vals = precision.rand(shape)
     tensor = minitorch.Tensor.make(vals, shape, backend=backend)
     tensor.requires_grad_(requires_grad)
     return tensor

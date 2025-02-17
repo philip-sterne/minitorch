@@ -30,21 +30,21 @@ class MapProto(Protocol):
 
 class TensorOps:
     @staticmethod
-    def map(fn: Callable[[dtype], dtype]) -> MapProto:
+    def map(fn: Callable[[dtype], dtype]) -> MapProto: # type: ignore
         pass
 
     @staticmethod
-    def cmap(fn: Callable[[dtype], dtype]) -> Callable[[Tensor, Tensor], Tensor]:
+    def cmap(fn: Callable[[dtype], dtype]) -> Callable[[Tenssor, Tensor], Tensor]: # type: ignore
         pass
 
     @staticmethod
-    def zip(fn: Callable[[dtype, dtype], dtype]) -> Callable[[Tensor, Tensor], Tensor]:
+    def zip(fn: Callable[[dtype, dtype], dtype]) -> Callable[[Tensor, Tensor], Tensor]: # type: ignore
         pass
 
     @staticmethod
     def reduce(
         fn: Callable[[dtype, dtype], dtype], start: dtype = dtype(0)
-    ) -> Callable[[Tensor, int], Tensor]:
+    ) -> Callable[[Tensor, int], Tensor]: # type: ignore
         pass
 
     @staticmethod
@@ -90,8 +90,10 @@ class TensorBackend:
         self.inv_back_zip = ops.zip(operators.inv_back)
 
         # Reduce
-        self.add_reduce = ops.reduce(operators.add, 0.0)
-        self.mul_reduce = ops.reduce(operators.mul, 1.0)
+        self.add_reduce = ops.reduce(operators.add, dtype(0.0))
+        self.mul_reduce = ops.reduce(operators.mul, dtype(1.0))
+        self.max_reduce = ops.reduce(operators.max_, dtype(-np.inf))
+
         self.matrix_multiply = ops.matrix_multiply
         self.cuda = ops.cuda
 

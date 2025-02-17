@@ -296,9 +296,8 @@ class Tensor:
             if orig_shape[dim] == 1 and shape != 1:
                 out = self.backend.add_reduce(out, dim)
         assert out.size == self.size, f"{out.shape} {self.shape}"
-        # START CODE CHANGE (2021)
+
         return Tensor.make(out._tensor._storage, self.shape, backend=self.backend)
-        # END CODE CHANGE (2021)
 
     def zeros(self, shape: Optional[UserShape] = None) -> Tensor:
         def zero(shape: UserShape) -> Tensor:
@@ -333,9 +332,7 @@ class Tensor:
         """
         assert self.is_leaf(), "Only leaf variables can have derivatives."
         if self.grad is None:
-            self.grad = Tensor.make(
-                [0] * int(math.prod(self.shape)), self.shape, backend=self.backend
-            )
+            self.grad = self.zeros()
         self.grad += x
 
     def is_leaf(self) -> bool:

@@ -84,6 +84,11 @@ class CudaOps(TensorOps):
             return out
 
         return ret
+    
+    # TODO: Implement the zip_bool method. 
+    # This method should be similar to the zip method, but should return a boolean tensor.
+    # The lt_zip, eq_zip, and gt_zip methods should be implemented using zip_bool.
+    # They are currently flagged as type mismatches, but I think they do actually work.
 
     @staticmethod
     def reduce(
