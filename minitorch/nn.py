@@ -4,7 +4,7 @@ from . import operators
 from .autodiff import Context
 from .fast_ops import FastOps
 from .tensor import Tensor
-from .tensor_functions import Function, rand, tensor
+from .tensor_functions import Function, rand, tensor, Max
 
 
 # List of functions in this file:
@@ -65,6 +65,76 @@ def avgpool2d(input: Tensor, kernel: Tuple[int, int]) -> Tensor:
     pool_area = kh * kw
     # Sum over the kernel window (dimension 4) then squeeze that dimension.
     return tiled.sum(dim=4) / pool_area
+
+
+def argmax(input: Tensor, dim: int) -> Tensor:
+    """Compute the argmax of the input tensor along a given dimension.
+
+    Args:
+        input: The input tensor.
+        dim: The dimension to compute the argmax along.
+    """
+    max_indices = input.zeros(input.shape).long()
+    max_vals = input.zeros(input.shape)
+
+    # Initialize with first element
+    for i in range(input.shape[dim]):
+        # Get slice along dimension
+        slc = input.index_select(dim, i)
+        # Update max values and indices where new values are larger
+        max_indices = max_indices.where(slc <= max_vals, i)
+        max_vals = max_vals.maximum(slc)
+
+    return max_indices
+
+
+def max(input: Tensor, dim: int) -> Tensor:
+    """Compute the max of the input tensor along a given dimension.
+
+    Args:
+        input: The input tensor.
+        dim: The dimension to compute the max along.
+    """
+    return Max.apply(input, dim)
+
+
+def maxpool2d(input: Tensor, kernel: Tuple[int, int]) -> Tensor:
+    """Tiled max pooling 2D.
+
+    Args:
+        input: Tensor of shape (batch, channel, height, width).
+        kernel: Tuple (kh, kw) for the pooling kernel dimensions.
+    """
+    tiled, new_height, new_width = tile(input, kernel)
+    return Max.apply(tiled, dim=4)
+
+
+def softmax(input: Tensor) -> Tensor:
+    """Compute the softmax of the input tensor."""
+    # Compute softmax along the last dimension in a numerically stable way.
+    last_dim = len(input.shape) - 1
+    # Subtract the maximum value in the last dimension (with unsqueeze for broadcasting)
+    max_vals = max(input, dim=last_dim).unsqueeze(last_dim)
+    # Exponentiate the stabilized tensor
+    exp_vals = (input - max_vals).exp()
+    # Sum the exponentials over the last dimension (with unsqueeze for proper broadcasting)
+    sum_exp = exp_vals.sum(dim=last_dim).unsqueeze(last_dim)
+    # Return the normalized probabilities
+    return exp_vals / sum_exp
+
+
+def logsoftmax(input: Tensor) -> Tensor:
+    """Compute the log of the softmax of the input tensor."""
+    # Compute softmax along the last dimension in a numerically stable way.
+    last_dim = len(input.shape) - 1
+    # Subtract the maximum value in the last dimension (with unsqueeze for broadcasting)
+    max_vals = max(input, dim=last_dim).unsqueeze(last_dim)
+    # Exponentiate the stabilized tensor
+    exp_vals = (input - max_vals).exp()
+    # Sum the exponentials over the last dimension (with unsqueeze for proper broadcasting)
+    sum_exp = exp_vals.sum(dim=last_dim).unsqueeze(last_dim)
+    # Return the normalized probabilities
+    return max_vals - sum_exp.log()
 
 
 def dropout(

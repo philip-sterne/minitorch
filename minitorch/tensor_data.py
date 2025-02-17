@@ -149,7 +149,7 @@ class TensorData:
         if isinstance(storage, np.ndarray):
             self._storage = storage
         else:
-            self._storage = array(storage, dtype=float64)
+            self._storage = np.array(storage, dtype=float64)
 
         if strides is None:
             strides = strides_from_shape(shape)
