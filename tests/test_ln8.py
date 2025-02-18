@@ -30,6 +30,7 @@ from minitorch.ln8_precision import (
     prod as fp8_prod,
 )
 
+
 def fp8_from_float(val):
     """
     If val is a scalar, returns a single np.int8 code.
@@ -85,6 +86,7 @@ ge = lambda x, y: (lt(y, x) or eq(x, y))
 
 # --- Basic arithmetic tests ----------------------------------
 
+
 def test_addition_same_sign():
     a = fp8_from_float(1.0)
     b = fp8_from_float(1.0)
@@ -134,6 +136,7 @@ def test_division():
 
 # --- Negation, ReLU ------------------------------------------
 
+
 def test_negation_positive():
     a = fp8_from_float(2.0)
     neg_a = neg(a)
@@ -164,6 +167,7 @@ def test_relu_positive():
 
 # --- Equality & Comparison ------------------------------------
 
+
 def test_equality():
     a = fp8_from_float(5.0)
     b = fp8_from_float(5.0)
@@ -176,7 +180,7 @@ def test_comparison():
     a = fp8_from_float(3.0)
     b = fp8_from_float(5.0)
     assert lt(a, b)
-    assert not(gt(a, b))
+    assert not (gt(a, b))
     assert le(a, a)
     assert ge(b, a)
 
@@ -202,6 +206,7 @@ def test_trichotomy_basic():
 
 
 # --- Extended tests ---------------------------------------------------
+
 
 def test_from_float_zero():
     """Zero => code=0 => decodes to ~ +1/256."""
@@ -368,6 +373,7 @@ def test_div_basic():
 
 # --- Negation and ReLU (array versions) --------------------------------
 
+
 def test_negation_zero():
     """0 encodes to 0; negation should return 0."""
     zero = fp8_from_float(0.0)
@@ -397,6 +403,7 @@ def test_relu_negative_array():
 
 # --- Comparisons ----------------------------------------------------------
 
+
 def test_eq_scalar():
     a = np.array([fp8_from_float(v) for v in [2.0, 3.0]], dtype=np.int8)
     b = np.array([fp8_from_float(v) for v in [2.0, 3.001]], dtype=np.int8)
@@ -408,11 +415,11 @@ def test_lt_gt_mixed():
     a = np.array([fp8_from_float(v) for v in [1.0, -5.0, 3.0]], dtype=np.int8)
     b = np.array([fp8_from_float(v) for v in [2.0, -10.0, 3.0]], dtype=np.int8)
     assert lt(a[0], b[0])
-    assert not(lt(a[1], b[1]))
-    assert not(lt(a[2], b[2]))
-    assert not(gt(a[0], b[0]))
+    assert not (lt(a[1], b[1]))
+    assert not (lt(a[2], b[2]))
+    assert not (gt(a[0], b[0]))
     assert gt(a[1], b[1])
-    assert not(gt(a[2], b[2]))
+    assert not (gt(a[2], b[2]))
     assert not eq(a[0], b[0])
     assert not eq(a[1], b[1])
     assert eq(a[2], b[2])
@@ -420,12 +427,13 @@ def test_lt_gt_mixed():
 
 # --- Exhaustive tests -----------------------------------------------------
 
+
 def test_encode():
     """Check that encoding and decoding are consistent."""
     for i in range(-128, 128):
         sign = math.copysign(1, i)
         print(f"i={i}, sign={sign}")
-        val = sign * 2 ** ((abs(i)-64) / 8)
+        val = sign * 2 ** ((abs(i) - 64) / 8)
         print(f"val={val}")
         print(f"encode(val)={encode(val)}")
         assert encode(val) == i

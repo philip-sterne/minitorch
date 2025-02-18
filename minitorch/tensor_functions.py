@@ -300,7 +300,7 @@ def zeros(shape: UserShape, backend: TensorBackend = SimpleBackend) -> Tensor:
     Returns:
         new tensor
     """
-    vals = precision.zeros(shape)
+    vals = precision.zeros(math.prod(shape))
     return minitorch.Tensor.make(vals, shape, backend=backend)
 
 
@@ -320,7 +320,7 @@ def rand(
     Returns:
         :class:`Tensor` : new tensor
     """
-    vals = precision.rand(shape)
+    vals = precision.rand(math.prod(shape))
     tensor = minitorch.Tensor.make(vals, shape, backend=backend)
     tensor.requires_grad_(requires_grad)
     return tensor

@@ -9,6 +9,7 @@ import numpy as np
 import numpy.typing as npt
 from numpy import array, float64
 from typing_extensions import TypeAlias
+from .precision import CURRENT_PRECISION as precision
 
 MAX_DIMS = 32
 
@@ -146,9 +147,11 @@ class TensorData:
         strides: Optional[UserStrides] = None,
     ):
         if isinstance(storage, np.ndarray):
+            # TODO : check if np array has correct dtype?
             self._storage = storage
         else:
-            self._storage = np.array(storage, dtype=float64)
+            storage = [precision.encode(x) for x in storage]
+            self._storage = array(storage, dtype=precision.dtype)
 
         if strides is None:
             strides = strides_from_shape(shape)

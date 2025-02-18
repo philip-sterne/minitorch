@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from .scalar import Scalar, ScalarLike
 
 ops = precision.CURRENT_PRECISION
-dtype = precision.CURRENT_TYPE
+dtype = ops.dtype
 
 
 def wrap_tuple(x):  # type: ignore

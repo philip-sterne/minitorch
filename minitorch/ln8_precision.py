@@ -3,6 +3,9 @@ import numpy as np
 from typing import Callable, Iterable
 from .numeric_precision import *
 
+dtype = np.int8
+
+
 # Precompute the tables used for log‑based addition.
 def _build_plus_table() -> list[int]:
     """
@@ -16,6 +19,7 @@ def _build_plus_table() -> list[int]:
         off = int(max(0, min(off, 8)))
         tbl[delta] = off
     return tbl
+
 
 def _build_minus_table() -> list[int]:
     """
@@ -35,16 +39,18 @@ def _build_minus_table() -> list[int]:
             tbl[delta] = off
     return tbl
 
+
 PLUS_TABLE = _build_plus_table()
 MINUS_TABLE = _build_minus_table()
 
-#-----------------------------------------------------------
+
+# -----------------------------------------------------------
 # Conversion functions between a Python float and our FP8 code.
 # The representation is:
 #    if code >= 0:   value = + 2^((code - 64)/8)
 #    if code < 0:    value = - 2^(((-code) - 64)/8)
 # with a special case that code==0 decodes to ~1/256.
-#-----------------------------------------------------------
+# -----------------------------------------------------------
 def decode(fp8: np.int8) -> float:
     """Convert an 8-bit code to a float."""
     x_int = int(fp8)
@@ -55,6 +61,7 @@ def decode(fp8: np.int8) -> float:
     else:
         return -math.pow(2.0, ((-x_int) - 64) / 8.0)
 
+
 def encode(value: float) -> np.int8:
     """
     Convert a float to an 8-bit code.
@@ -62,7 +69,7 @@ def encode(value: float) -> np.int8:
     For nonzero value, we compute:
          code = round(64 + 8 * log2(|value|))
     and then apply the sign.
-    
+
     Positive numbers are clamped to a maximum code of 127.
     Negative numbers are clamped to a minimum code of -128.
     """
@@ -84,19 +91,16 @@ def encode(value: float) -> np.int8:
         p_approx = max(0, min(p_approx, 128))
     return np.int8(p_approx if sign > 0 else -p_approx)
 
-#-----------------------------------------------------------
+
+# -----------------------------------------------------------
 # Arithmetic Operations
-#-----------------------------------------------------------
+# -----------------------------------------------------------
 def add(x: np.int8, y: np.int8) -> np.int8:
     """
     Add two FP8 numbers (encoded as np.int8) using the log‐based method.
     If both operands have the same sign, we add an offset from PLUS_TABLE;
     if they differ, we subtract using MINUS_TABLE.
     """
-    if x.size != 1:
-        import pdb; pdb.set_trace()
-    if y.size != 1:
-        import pdb; pdb.set_trace()
     x_int = int(x)
     y_int = int(y)
     s1 = 1 if x_int >= 0 else -1
@@ -133,11 +137,13 @@ def add(x: np.int8, y: np.int8) -> np.int8:
         result = diff_exp if res_sign > 0 else -diff_exp
         return np.int8(result)
 
+
 def neg(x: np.int8) -> np.int8:
     """Negate an FP8 number."""
     result = -int(x)
     result = max(-128, min(result, 127))
     return np.int8(result)
+
 
 def mul(x: np.int8, y: np.int8) -> np.int8:
     """
@@ -158,6 +164,7 @@ def mul(x: np.int8, y: np.int8) -> np.int8:
     result = max(-128, min(result, 127))
     return np.int8(result)
 
+
 def truediv(x: np.int8, y: np.int8) -> np.int8:
     """
     Divide two FP8 numbers.
@@ -177,13 +184,15 @@ def truediv(x: np.int8, y: np.int8) -> np.int8:
     result = max(-128, min(result, 127))
     return np.int8(result)
 
+
 def id(x: np.int8) -> np.int8:
     """Identity function."""
     return x
 
-#-----------------------------------------------------------
+
+# -----------------------------------------------------------
 # Nonlinear and Activation Functions
-#-----------------------------------------------------------
+# -----------------------------------------------------------
 def sigmoid(x: np.int8) -> np.int8:
     """
     Compute the sigmoid function.
@@ -193,6 +202,7 @@ def sigmoid(x: np.int8) -> np.int8:
     x_float = decode(x)
     s = 1.0 / (1.0 + math.exp(-x_float))
     return encode(s)
+
 
 def sigmoid_back(x: np.int8, y: np.int8) -> np.int8:
     """
@@ -207,12 +217,14 @@ def sigmoid_back(x: np.int8, y: np.int8) -> np.int8:
     grad = y_float * deriv
     return encode(grad)
 
+
 def relu(x: np.int8) -> np.int8:
     """
     ReLU activation: if x is negative, return FP8(0)
     (which decodes to ~1/256); otherwise return x.
     """
     return x if int(x) >= 0 else np.int8(0)
+
 
 def relu_back(x: np.int8, y: np.int8) -> np.int8:
     """
@@ -224,6 +236,7 @@ def relu_back(x: np.int8, y: np.int8) -> np.int8:
     grad = y_float * deriv
     return encode(grad)
 
+
 def log(x: np.int8) -> np.int8:
     """
     Natural logarithm.  Compute log(f) where f is the decoded FP8 number.
@@ -231,6 +244,7 @@ def log(x: np.int8) -> np.int8:
     x_float = decode(x)
     val = math.log(x_float)
     return encode(val)
+
 
 def log_back(x: np.int8, y: np.int8) -> np.int8:
     """
@@ -242,6 +256,7 @@ def log_back(x: np.int8, y: np.int8) -> np.int8:
     grad = y_float * (1.0 / x_float) if x_float != 0 else 0.0
     return encode(grad)
 
+
 def exp(x: np.int8) -> np.int8:
     """
     Exponential function: compute exp(f) where f is the decoded FP8 number.
@@ -249,6 +264,7 @@ def exp(x: np.int8) -> np.int8:
     x_float = decode(x)
     val = math.exp(x_float)
     return encode(val)
+
 
 def exp_back(x: np.int8, y: np.int8) -> np.int8:
     """
@@ -260,6 +276,7 @@ def exp_back(x: np.int8, y: np.int8) -> np.int8:
     grad = y_float * math.exp(x_float)
     return encode(grad)
 
+
 def inv(x: np.int8) -> np.int8:
     """
     Inverse function: compute 1/f.
@@ -268,6 +285,7 @@ def inv(x: np.int8) -> np.int8:
     x_float = decode(x)
     val = 1.0 / x_float
     return encode(val)
+
 
 def inv_back(x: np.int8, y: np.int8) -> np.int8:
     """
@@ -279,43 +297,53 @@ def inv_back(x: np.int8, y: np.int8) -> np.int8:
     grad = y_float * (-1.0 / (x_float * x_float)) if x_float != 0 else 0.0
     return encode(grad)
 
+
 def is_close(x: np.int8, y: np.int8) -> bool:
     """Return True if the decoded values of x and y are close."""
     return math.isclose(decode(x), decode(y), rel_tol=3e-1, abs_tol=1e-1)
+
 
 def lt(x: np.int8, y: np.int8) -> bool:
     """Less-than comparison using the underlying integer codes."""
     return bool(x < y)
 
+
 def eq(x: np.int8, y: np.int8) -> bool:
     """Equality check using the underlying integer codes."""
     return x == y
+
 
 def max_(x: np.int8, y: np.int8) -> np.int8:
     """Return the maximum (by comparing the codes)."""
     return x if x >= y else y
 
-#-----------------------------------------------------------
+
+# -----------------------------------------------------------
 # Iterable Helpers
-#-----------------------------------------------------------
+# -----------------------------------------------------------
 def map(fn: Callable[[np.int8], np.int8], l: Iterable[np.int8]) -> Iterable[np.int8]:
     """Apply fn elementwise."""
     return (fn(x) for x in l)
 
-def zipWith(fn: Callable[[np.int8, np.int8], np.int8],
-            l1: Iterable[np.int8],
-            l2: Iterable[np.int8]) -> Iterable[np.int8]:
+
+def zipWith(
+    fn: Callable[[np.int8, np.int8], np.int8],
+    l1: Iterable[np.int8],
+    l2: Iterable[np.int8],
+) -> Iterable[np.int8]:
     """Apply fn to pairs from l1 and l2."""
     return (fn(x, y) for x, y in zip(l1, l2))
 
-def reduce(fn: Callable[[np.int8, np.int8], np.int8],
-           l: Iterable[np.int8],
-           init: np.int8) -> np.int8:
+
+def reduce(
+    fn: Callable[[np.int8, np.int8], np.int8], l: Iterable[np.int8], init: np.int8
+) -> np.int8:
     """Reduce the iterable l with fn starting from init."""
     acc = init
     for x in l:
         acc = fn(acc, x)
     return acc
+
 
 def sum(l: Iterable[np.int8]) -> np.int8:
     """
@@ -323,6 +351,7 @@ def sum(l: Iterable[np.int8]) -> np.int8:
     (Here, 0 is the FP8 encoding of ~1/256, our “zero”.)
     """
     return reduce(add, l, np.int8(0))
+
 
 def prod(l: Iterable[np.int8]) -> np.int8:
     """
@@ -332,10 +361,17 @@ def prod(l: Iterable[np.int8]) -> np.int8:
     return reduce(mul, l, np.int8(64))
 
 
-def zeros(shape: Iterable[int]) -> np.ndarray:
-    """Return a zero tensor of the given shape."""
-    return np.zeros(tuple(shape), dtype=np.int8)
+def zeros(size: int, dtype: type = np.int8) -> np.ndarray:
+    """Return a 1D tensor with a given number of zero entries."""
+    if dtype != np.int8:
+        raise ValueError(f"Expected dtype=np.int8, got {dtype}")
+    return np.zeros(size, dtype=np.int8)
 
-def rand(shape: Iterable[int]) -> np.ndarray:
-    """Return a random tensor of the given shape."""
-    return np.random.randint(-64, 64, tuple(shape), dtype=np.int8)
+
+def rand(size: int, dtype: type = np.int8) -> np.ndarray:
+    """Return a 1D tensor with a given number of random entries."""
+
+    if dtype != np.int8:
+        raise ValueError(f"Expected dtype=np.int8, got {dtype}")
+
+    return np.random.randint(-64, 64, size, dtype=np.int8)

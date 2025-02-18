@@ -148,7 +148,7 @@ class Tensor:
         return Add.apply(self, self._ensure_tensor(b))
 
     def __sub__(self, b: TensorLike) -> Tensor:
-        return Add.apply(self, -self._ensure_tensor(b))
+        return Add.apply(self, Neg.apply(self._ensure_tensor(b)))
 
     def __mul__(self, b: TensorLike) -> Tensor:
         return Mul.apply(self, self._ensure_tensor(b))
@@ -160,7 +160,6 @@ class Tensor:
         return Mul.apply(self._ensure_tensor(b), Inv.apply(self))
 
     def __matmul__(self, b: Tensor) -> Tensor:
-        "Not used until Module 3"
         return MatMul.apply(self, b)
 
     def __lt__(self, b: TensorLike) -> Tensor:
@@ -206,6 +205,7 @@ class Tensor:
         """Convert a 1-element tensor to a float"""
         assert self.size == 1
         return self._tensor._storage[0]
+        # return self[0]
 
     def sum(self, dim: Optional[int] = None) -> Tensor:
         "Compute the sum over dimension `dim`"
@@ -332,7 +332,9 @@ class Tensor:
         """
         assert self.is_leaf(), "Only leaf variables can have derivatives."
         if self.grad is None:
-            self.grad = self.zeros()
+            self.grad = Tensor.make(
+                [0] * int(math.prod(self.shape)), self.shape, backend=self.backend
+            )
         self.grad += x
 
     def is_leaf(self) -> bool:

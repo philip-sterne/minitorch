@@ -21,7 +21,8 @@ if TYPE_CHECKING:
 
 
 operators = precision.CURRENT_PRECISION
-dtype = precision.CURRENT_TYPE
+dtype = operators.dtype
+encode = operators.encode
 
 
 class MapProto(Protocol):
@@ -30,21 +31,21 @@ class MapProto(Protocol):
 
 class TensorOps:
     @staticmethod
-    def map(fn: Callable[[dtype], dtype]) -> MapProto: # type: ignore
+    def map(fn: Callable[[dtype], dtype]) -> MapProto:  # type: ignore
         pass
 
     @staticmethod
-    def cmap(fn: Callable[[dtype], dtype]) -> Callable[[Tenssor, Tensor], Tensor]: # type: ignore
+    def cmap(fn: Callable[[dtype], dtype]) -> Callable[[Tenssor, Tensor], Tensor]:  # type: ignore
         pass
 
     @staticmethod
-    def zip(fn: Callable[[dtype, dtype], dtype]) -> Callable[[Tensor, Tensor], Tensor]: # type: ignore
+    def zip(fn: Callable[[dtype, dtype], dtype]) -> Callable[[Tensor, Tensor], Tensor]:  # type: ignore
         pass
 
     @staticmethod
     def reduce(
         fn: Callable[[dtype, dtype], dtype], start: dtype = dtype(0)
-    ) -> Callable[[Tensor, int], Tensor]: # type: ignore
+    ) -> Callable[[Tensor, int], Tensor]:  # type: ignore
         pass
 
     @staticmethod
@@ -90,9 +91,9 @@ class TensorBackend:
         self.inv_back_zip = ops.zip(operators.inv_back)
 
         # Reduce
-        self.add_reduce = ops.reduce(operators.add, dtype(0.0))
-        self.mul_reduce = ops.reduce(operators.mul, dtype(1.0))
-        self.max_reduce = ops.reduce(operators.max_, dtype(-np.inf))
+        self.add_reduce = ops.reduce(operators.add, encode(0.0))
+        self.mul_reduce = ops.reduce(operators.mul, encode(1.0))
+        self.max_reduce = ops.reduce(operators.max_, encode(-np.inf))
 
         self.matrix_multiply = ops.matrix_multiply
         self.cuda = ops.cuda
@@ -329,18 +330,22 @@ def tensor_zip(fn: Callable[[dtype, dtype], dtype]) -> Any:
         b_shape: Shape,
         b_strides: Strides,
     ) -> None:
-        out_index = np.array(out_shape)
-        a_index = np.array(a_shape)
-        b_index = np.array(b_shape)
+        out_index = np.zeros(len(out_shape), dtype=np.int32)
+        a_index = np.zeros(len(a_shape), dtype=np.int32)
+        b_index = np.zeros(len(b_shape), dtype=np.int32)
 
         for i in range(len(out)):
             to_index(i, out_shape, out_index)
             broadcast_index(out_index, out_shape, a_shape, a_index)
             broadcast_index(out_index, out_shape, b_shape, b_index)
-            x_a = a_storage[index_to_position(a_index, a_strides)]
-            x_b = b_storage[index_to_position(b_index, b_strides)]
-            y = fn(x_a, x_b)
-            out[index_to_position(out_index, out_strides)] = y
+
+            a_pos = index_to_position(a_index, a_strides)
+            b_pos = index_to_position(b_index, b_strides)
+            out_pos = index_to_position(out_index, out_strides)
+
+            ans = fn(a_storage[a_pos], b_storage[b_pos])
+
+            out[out_pos] = ans
 
     return _zip
 
