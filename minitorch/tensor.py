@@ -32,6 +32,7 @@ from .tensor_functions import (
     View,
     tensor,
 )
+from .tensor_functions import zeros as tf_zeros
 
 if TYPE_CHECKING:
     from typing import Any, Iterable, List, Optional, Sequence, Tuple, Type, Union
@@ -134,10 +135,15 @@ class Tensor:
         """
         return self._tensor.dims
 
-    def _ensure_tensor(self, b: TensorLike) -> Tensor:
-        "Turns a python number into a tensor with the same backend."
+    def _ensure_tensor(self, b: TensorLike, encode: bool = True) -> Tensor:
+        """Turns a python number into a tensor with the same backend.
+        
+        Please note the following behaviour:
+        - If b is already an array, it is not encoded (regardless of the encode argument)
+        - If b is a float or int, it is encoded if encode is True, otherwise it is not encoded.
+        """
         if isinstance(b, (int, float)):
-            c = Tensor.make([b], (1,), backend=self.backend)
+            c = Tensor.make([b], (1,), backend=self.backend, encode=encode)
         else:
             b._type_(self.backend)
             c = b
@@ -182,9 +188,9 @@ class Tensor:
 
     def all(self, dim: Optional[int] = None) -> Tensor:
         if dim is None:
-            return All.apply(self.view(self.size), self._ensure_tensor(0))
+            return All.apply(self.view(self.size), self._ensure_tensor(0, encode=False))
         else:
-            return All.apply(self, self._ensure_tensor(dim))
+            return All.apply(self, self._ensure_tensor(dim, encode=False))
 
     def is_close(self, y: Tensor) -> Tensor:
         return IsClose.apply(self, y)
@@ -210,9 +216,9 @@ class Tensor:
     def sum(self, dim: Optional[int] = None) -> Tensor:
         "Compute the sum over dimension `dim`"
         if dim is None:
-            return Sum.apply(self.contiguous().view(self.size), self._ensure_tensor(0))
+            return Sum.apply(self.contiguous().view(self.size), self._ensure_tensor(0, encode=False))
         else:
-            return Sum.apply(self, self._ensure_tensor(dim))
+            return Sum.apply(self, self._ensure_tensor(dim, encode=False))
 
     def mean(self, dim: Optional[int] = None) -> Tensor:
         "Compute the mean over dimension `dim`"
@@ -223,11 +229,13 @@ class Tensor:
 
     def permute(self, *order: int) -> Tensor:
         "Permute tensor dimensions to *order"
-        return Permute.apply(self, tensor(list(order)))
+        return Permute.apply(self, tensor(list(order), encode=False))
 
     def view(self, *shape: int) -> Tensor:
         "Change the shape of the tensor to a new shape with the same size"
-        return View.apply(self, tensor(list(shape)))
+        if math.prod(shape) != self.size:
+            raise ValueError(f"Cannot view {self.shape} as {shape}")
+        return View.apply(self, tensor(list(shape), encode=False))
 
     def contiguous(self) -> Tensor:
         """Return a contiguous tensor with the same data"""
@@ -259,9 +267,11 @@ class Tensor:
         shape: UserShape,
         strides: Optional[UserStrides] = None,
         backend: Optional[TensorBackend] = None,
+        encode: bool = True,
     ) -> Tensor:
         "Create a new tensor from data"
-        return Tensor(TensorData(storage, shape, strides), backend=backend)
+        td = TensorData(storage, shape, strides, encode)
+        return Tensor(td, backend=backend)
 
     def expand(self, other: Tensor) -> Tensor:
         """
@@ -300,17 +310,9 @@ class Tensor:
         return Tensor.make(out._tensor._storage, self.shape, backend=self.backend)
 
     def zeros(self, shape: Optional[UserShape] = None) -> Tensor:
-        def zero(shape: UserShape) -> Tensor:
-            return Tensor.make(
-                [0.0] * int(math.prod(shape)), shape, backend=self.backend
-            )
-
         if shape is None:
-            out = zero(self.shape)
-        else:
-            out = zero(shape)
-        out._type_(self.backend)
-        return out
+            shape = self.shape
+        return tf_zeros(shape, backend=self.backend)
 
     def tuple(self) -> Tuple[Storage, Shape, Strides]:
         """Get the tensor data info as a tuple."""

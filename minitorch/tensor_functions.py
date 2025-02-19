@@ -243,7 +243,7 @@ class View(Function):
         assert a._tensor.is_contiguous(), "Must be contiguous to view"
         shape2 = [int(shape[i]) for i in range(shape.size)]
         return minitorch.Tensor.make(
-            a._tensor._storage, tuple(shape2), backend=a.backend
+            a._tensor._storage, tuple(shape2), backend=a.backend, encode=False
         )
 
     @staticmethod
@@ -251,7 +251,10 @@ class View(Function):
         (original,) = ctx.saved_values
         return (
             minitorch.Tensor.make(
-                grad_output._tensor._storage, original, backend=grad_output.backend
+                grad_output._tensor._storage,
+                original,
+                backend=grad_output.backend,
+                encode=False,
             ),
             0.0,
         )
@@ -301,7 +304,7 @@ def zeros(shape: UserShape, backend: TensorBackend = SimpleBackend) -> Tensor:
         new tensor
     """
     vals = precision.zeros(math.prod(shape))
-    return minitorch.Tensor.make(vals, shape, backend=backend)
+    return minitorch.Tensor.make(vals, shape, backend=backend, encode=False)
 
 
 def rand(
@@ -321,7 +324,7 @@ def rand(
         :class:`Tensor` : new tensor
     """
     vals = precision.rand(math.prod(shape))
-    tensor = minitorch.Tensor.make(vals, shape, backend=backend)
+    tensor = minitorch.Tensor.make(vals, shape, backend=backend, encode=False)
     tensor.requires_grad_(requires_grad)
     return tensor
 
@@ -331,6 +334,7 @@ def _tensor(
     shape: UserShape,
     backend: TensorBackend = SimpleBackend,
     requires_grad: bool = False,
+    encode: bool = True,
 ) -> Tensor:
     """
     Produce a tensor with data ls and shape `shape`.
@@ -344,13 +348,16 @@ def _tensor(
     Returns:
         new tensor
     """
-    tensor = minitorch.Tensor.make(ls, shape, backend=backend)
+    tensor = minitorch.Tensor.make(ls, shape, backend=backend, encode=encode)
     tensor.requires_grad_(requires_grad)
     return tensor
 
 
 def tensor(
-    ls: Any, backend: TensorBackend = SimpleBackend, requires_grad: bool = False
+    ls: Any,
+    backend: TensorBackend = SimpleBackend,
+    requires_grad: bool = False,
+    encode: bool = True,
 ) -> Tensor:
     """
     Produce a tensor with data and shape from ls
@@ -378,7 +385,9 @@ def tensor(
 
     cur = flatten(ls)
     shape2 = shape(ls)
-    return _tensor(cur, tuple(shape2), backend=backend, requires_grad=requires_grad)
+    return _tensor(
+        cur, tuple(shape2), backend=backend, requires_grad=requires_grad, encode=encode
+    )
 
 
 # Gradient check for tensors

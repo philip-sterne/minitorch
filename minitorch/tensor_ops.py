@@ -216,6 +216,9 @@ class SimpleOps(TensorOps):
 
         def ret(a: "Tensor", dim: int) -> "Tensor":
             out_shape = list(a.shape)
+            if dim >= len(out_shape):
+                import pdb; pdb.set_trace()
+                raise IndexError(f"Dimension {dim} is out of bounds for tensor of shape {a.shape}")
             out_shape[dim] = 1
 
             # Other values when not sum.

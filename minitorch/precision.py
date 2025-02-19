@@ -4,9 +4,8 @@ import minitorch.float_precision
 import minitorch.ln8_precision
 
 # Global precision class
-CURRENT_PRECISION = minitorch.float_precision
-
-# CURRENT_PRECISION = minitorch.ln8_precision
+# CURRENT_PRECISION = minitorch.float_precision
+CURRENT_PRECISION = minitorch.ln8_precision
 
 
 def set_precision(precision: str) -> None:

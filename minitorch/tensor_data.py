@@ -145,12 +145,19 @@ class TensorData:
         storage: Union[Sequence[float], Storage],
         shape: UserShape,
         strides: Optional[UserStrides] = None,
+        encode: bool = True,
     ):
         if isinstance(storage, np.ndarray):
-            # TODO : check if np array has correct dtype?
+            if encode:
+                # Apply the encoding function elementwise to the array.
+                # np.vectorize returns a new array of the same shape.
+                storage = np.vectorize(precision.encode)(storage)
+                # Ensure the resulting array has the desired dtype.
+                storage = storage.astype(precision.dtype)
             self._storage = storage
         else:
-            storage = [precision.encode(x) for x in storage]
+            if encode:
+                storage = [precision.encode(x) for x in storage]
             self._storage = array(storage, dtype=precision.dtype)
 
         if strides is None:
@@ -166,9 +173,10 @@ class TensorData:
         self.dims = len(strides)
         self.size = int(math.prod(shape))
         self.shape = shape
-        # print(self.size, len(self._storage))
-        # print(type(self._storage))
-        # print(dir(self._storage))
+        if self._storage.size != self.size:
+            print(self.size, len(self._storage))
+            print(type(self._storage))
+            print(dir(self._storage))
         assert self._storage.size == self.size
 
     def to_cuda_(self) -> None:  # pragma: no cover
