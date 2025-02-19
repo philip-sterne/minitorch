@@ -9,6 +9,7 @@ import numpy as np
 import numpy.typing as npt
 from numpy import array, float64
 from typing_extensions import TypeAlias
+from .precision import CURRENT_PRECISION as precision
 
 MAX_DIMS = 32
 
@@ -144,11 +145,20 @@ class TensorData:
         storage: Union[Sequence[float], Storage],
         shape: UserShape,
         strides: Optional[UserStrides] = None,
+        encode: bool = True,
     ):
         if isinstance(storage, np.ndarray):
+            if encode:
+                # Apply the encoding function elementwise to the array.
+                # np.vectorize returns a new array of the same shape.
+                storage = np.vectorize(precision.encode)(storage)
+                # Ensure the resulting array has the desired dtype.
+                storage = storage.astype(precision.dtype)
             self._storage = storage
         else:
-            self._storage = np.array(storage, dtype=float64)
+            if encode:
+                storage = [precision.encode(x) for x in storage]
+            self._storage = array(storage, dtype=precision.dtype)
 
         if strides is None:
             strides = strides_from_shape(shape)
@@ -163,9 +173,10 @@ class TensorData:
         self.dims = len(strides)
         self.size = int(math.prod(shape))
         self.shape = shape
-        # print(self.size, len(self._storage))
-        # print(type(self._storage))
-        # print(dir(self._storage))
+        if self._storage.size != self.size:
+            print(self.size, len(self._storage))
+            print(type(self._storage))
+            print(dir(self._storage))
         assert self._storage.size == self.size
 
     def to_cuda_(self) -> None:  # pragma: no cover
