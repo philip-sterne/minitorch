@@ -48,6 +48,7 @@ def test_create_encode(backend: str, t1: List[float]) -> None:
     for i in range(len(t1)):
         assert precision.encode(t1[i]) == t2[i]
 
+
 @given(data())
 @settings(max_examples=100)
 @pytest.mark.parametrize("fn", one_arg)

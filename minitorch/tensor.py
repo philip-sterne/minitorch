@@ -15,9 +15,13 @@ from .tensor_data import TensorData
 from .tensor_functions import (
     EQ,
     LT,
+    LE,
     Add,
     All,
+    Any,
     Copy,
+    Decode,
+    Encode,
     Exp,
     Inv,
     IsClose,
@@ -137,7 +141,7 @@ class Tensor:
 
     def _ensure_tensor(self, b: TensorLike, encode: bool = True) -> Tensor:
         """Turns a python number into a tensor with the same backend.
-        
+
         Please note the following behaviour:
         - If b is already an array, it is not encoded (regardless of the encode argument)
         - If b is a float or int, it is encoded if encode is True, otherwise it is not encoded.
@@ -152,9 +156,15 @@ class Tensor:
     # Functions
     def __add__(self, b: TensorLike) -> Tensor:
         return Add.apply(self, self._ensure_tensor(b))
+    
+    def __radd__(self, b: TensorLike) -> Tensor:
+        return Add.apply(self._ensure_tensor(b), self)
 
     def __sub__(self, b: TensorLike) -> Tensor:
         return Add.apply(self, Neg.apply(self._ensure_tensor(b)))
+    
+    def __rsub__(self, b: TensorLike) -> Tensor:
+        return Add.apply(self._ensure_tensor(b), Neg.apply(self))
 
     def __mul__(self, b: TensorLike) -> Tensor:
         return Mul.apply(self, self._ensure_tensor(b))
@@ -170,6 +180,9 @@ class Tensor:
 
     def __lt__(self, b: TensorLike) -> Tensor:
         return LT.apply(self, self._ensure_tensor(b))
+
+    def __le__(self, b: TensorLike) -> Tensor:
+        return LE.apply(self, self._ensure_tensor(b))
 
     def __eq__(self, b: TensorLike) -> Tensor:  # type: ignore[override]
         return EQ.apply(self, self._ensure_tensor(b))
@@ -191,6 +204,12 @@ class Tensor:
             return All.apply(self.view(self.size), self._ensure_tensor(0, encode=False))
         else:
             return All.apply(self, self._ensure_tensor(dim, encode=False))
+
+    def any(self, dim: Optional[int] = None) -> Tensor:
+        if dim is None:
+            return Any.apply(self.view(self.size), self._ensure_tensor(0, encode=False))
+        else:
+            return Any.apply(self, self._ensure_tensor(dim, encode=False))
 
     def is_close(self, y: Tensor) -> Tensor:
         return IsClose.apply(self, y)
@@ -216,7 +235,9 @@ class Tensor:
     def sum(self, dim: Optional[int] = None) -> Tensor:
         "Compute the sum over dimension `dim`"
         if dim is None:
-            return Sum.apply(self.contiguous().view(self.size), self._ensure_tensor(0, encode=False))
+            return Sum.apply(
+                self.contiguous().view(self.size), self._ensure_tensor(0, encode=False)
+            )
         else:
             return Sum.apply(self, self._ensure_tensor(dim, encode=False))
 
@@ -239,6 +260,7 @@ class Tensor:
 
     def contiguous(self) -> Tensor:
         """Return a contiguous tensor with the same data"""
+        # TODO: Check if the memory is already contiguous
         return Copy.apply(self)
 
     def __repr__(self) -> str:
@@ -260,6 +282,12 @@ class Tensor:
 
     def _new(self, tensor_data: TensorData) -> Tensor:
         return Tensor(tensor_data, backend=self.backend)
+    
+    def encode(self) -> Tensor:
+        return Encode.apply(self)
+    
+    def decode(self) -> Tensor:
+        return Decode.apply(self)
 
     @staticmethod
     def make(

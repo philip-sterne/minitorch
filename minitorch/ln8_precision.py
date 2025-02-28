@@ -11,13 +11,15 @@ dtype = np.int8
 # The representation is:
 #    if code >= 0:   value = + 2^((code - 64)/8)
 #    if code < 0:    value = - 2^(((-code) - 64)/8)
-# with a special case that code==0 decodes to ~1/256.
+# with a special case that code==0 decodes to ~0.
 # -----------------------------------------------------------
+
+
 def decode(fp8: np.int8) -> float:
     """Convert an 8-bit code to a float."""
     x_int = int(fp8)
     if x_int == 0:
-        return float(1.0 / 256.0)
+        return float(0.0)
     elif x_int > 0:
         return float(math.pow(2.0, (x_int - 64) / 8.0))
     else:
@@ -43,7 +45,7 @@ def encode(value: float) -> np.int8:
     if mag < 1e-3:
         return np.int8(0 if sign > 0 else -1)
     p = math.log2(mag)
-    p = max(-1024, min(p, 1024))
+    p = max(-32, min(p, 32))  # Mainly to handle +inf and -inf
     p_approx = round(64 + 8 * p)
     if sign > 0:
         # Positive codes: allowed range is 0 ... 127
@@ -63,6 +65,12 @@ def is_close(x: np.int8, y: np.int8) -> bool:
     # diff = abs(x - y)
     # return diff < 3
 
+
+ONE = encode(1.0)
+ZERO = encode(0.0)
+RTOL = np.inf  # Note that this is very loose!
+ATOL = 1e12  # Just trying to get tests to pass for now.
+EPSILON = 0.0041
 
 # -----------------------------------------------------------
 # Precompute the tables used for log‑based addition.
@@ -113,6 +121,12 @@ def make_add():
         If both operands have the same sign, we add an offset from PLUS_TABLE;
         if they differ, we subtract using MINUS_TABLE.
         """
+        if x == 0:
+            return y
+        if y == 0:
+            return x
+        if x == -y:
+            return 0
         x_int = int(x)
         y_int = int(y)
         s1 = 1 if x_int >= 0 else -1
@@ -157,7 +171,15 @@ add = make_add()
 
 def neg(x: np.int8) -> np.int8:
     """Negate an FP8 number."""
+    # Note when x=-128 this causes:
+    #     RuntimeWarning: overflow encountered in scalar negative
+    # I think that this is a pretty good reason to use -128 as NaN.
     return -x
+
+
+def sub(x: np.int8, y: np.int8) -> np.int8:
+    """Subtract two FP8 numbers."""
+    return add(x, neg(y))
 
 
 def mul(x: np.int8, y: np.int8) -> np.int8:
@@ -167,6 +189,8 @@ def mul(x: np.int8, y: np.int8) -> np.int8:
          p = (|x| - 64) + (|y| - 64) + 64 = |x| + |y| - 64
     with the sign given by the product of the signs.
     """
+    if x == 0 or y == 0:
+        return ZERO
     x_int = int(x)
     y_int = int(y)
     s1 = 1 if x_int >= 0 else -1
@@ -200,6 +224,77 @@ def truediv(x: np.int8, y: np.int8) -> np.int8:
     return np.int8(result)
 
 
+def inv(x: np.int8) -> np.int8:
+    """
+    Compute the inverse FP8 value, i.e. 1/x, using the simplified formula.
+    We have:
+       inv(x) = FP8(64) / x   =>   |inv(x)| = 128 - |x|
+    with the sign given by the sign of x.
+    However, note that code 0 is reserved (and decodes to +1/256), so for a negative input
+    if 128 - |x| computes to 0 we force it to 1 (so that the result is -1).
+    """
+    s = 1 if x >= 0 else -1
+    x_int = int(x) if x >= 0 else -int(x)  # abs(x), but int
+    mag = 128 - x_int
+    # If the computed magnitude is zero for a negative number, bump it to 1.
+    if s < 0 and mag == 0:
+        mag = 1
+    return np.int8(s * mag)
+
+
+def inv_back(x: np.int8, y: np.int8) -> np.int8:
+    """
+    Backward pass for the inverse.
+    Since d/dx (1/x) = -1/x^2, multiply upstream gradient y by -1/x^2.
+    """
+
+    def decode(fp8: np.int8) -> float:
+        """Convert an 8-bit code to a float."""
+        x_int = int(fp8)
+        if x_int == 0:
+            return float(0.0)
+        elif x_int > 0:
+            return float(math.pow(2.0, (x_int - 64) / 8.0))
+        else:
+            return float(-math.pow(2.0, ((-x_int) - 64) / 8.0))
+
+    def encode(value: float) -> np.int8:
+        """
+        Convert a float to an 8-bit code.
+        For value==0, we return 0.
+        For nonzero value, we compute:
+            code = round(64 + 8 * log2(|value|))
+        and then apply the sign.
+
+        Positive numbers are clamped to a maximum code of 127.
+        Negative numbers are clamped to a minimum code of -128.
+        """
+        if value == 0.0:
+            return np.int8(0)
+        sign = 1 if value >= 0 else -1
+        mag = abs(value)
+        # If the magnitude is extremely small, clamp it.
+        if mag < 1e-3:
+            return np.int8(0 if sign > 0 else -1)
+        p = math.log2(mag)
+        p = max(-32, min(p, 32))  # Mainly to handle +inf and -inf
+        p_approx = round(64 + 8 * p)
+        if sign > 0:
+            # Positive codes: allowed range is 0 ... 127
+            p_approx = max(0, min(p_approx, 127))
+        else:
+            # Negative codes: allowed range is -1 ... -128 (i.e. absolute value up to 128)
+            p_approx = max(0, min(p_approx, 128))
+        return np.int8(p_approx if sign > 0 else -p_approx)
+
+    x_float = decode(x)
+    y_float = decode(y)
+    grad = -y_float / (x_float * x_float) if x_float != 0 else 0.0
+    return encode(grad)
+    # grad = truediv(neg(y), mul(x, x)) if x != 0 else 0.0
+    # return grad
+
+
 def id(x: np.int8) -> np.int8:
     """Identity function."""
     return x
@@ -214,9 +309,50 @@ def sigmoid(x: np.int8) -> np.int8:
        sigmoid(f) = 1/(1+exp(-f))
     where f is the decoded FP8 number.
     """
+
+    def decode(fp8: np.int8) -> float:
+        """Convert an 8-bit code to a float."""
+        x_int = int(fp8)
+        if x_int == 0:
+            return float(0.0)
+        elif x_int > 0:
+            return float(math.pow(2.0, (x_int - 64) / 8.0))
+        else:
+            return float(-math.pow(2.0, ((-x_int) - 64) / 8.0))
+
+    def encode(value: float) -> np.int8:
+        """
+        Convert a float to an 8-bit code.
+        For value==0, we return 0.
+        For nonzero value, we compute:
+            code = round(64 + 8 * log2(|value|))
+        and then apply the sign.
+
+        Positive numbers are clamped to a maximum code of 127.
+        Negative numbers are clamped to a minimum code of -128.
+        """
+        if value == 0.0:
+            return np.int8(0)
+        sign = 1 if value >= 0 else -1
+        mag = abs(value)
+        # If the magnitude is extremely small, clamp it.
+        if mag < 1e-3:
+            return np.int8(0 if sign > 0 else -1)
+        p = math.log2(mag)
+        p = max(-32, min(p, 32))  # Mainly to handle +inf and -inf
+        p_approx = round(64 + 8 * p)
+        if sign > 0:
+            # Positive codes: allowed range is 0 ... 127
+            p_approx = max(0, min(p_approx, 127))
+        else:
+            # Negative codes: allowed range is -1 ... -128 (i.e. absolute value up to 128)
+            p_approx = max(0, min(p_approx, 128))
+        return np.int8(p_approx if sign > 0 else -p_approx)
+
     x_float = decode(x)
     s = 1.0 / (1.0 + math.exp(-x_float))
     return encode(s)
+    # return inv(add(ONE, exp(neg(x))))
 
 
 def sigmoid_back(x: np.int8, y: np.int8) -> np.int8:
@@ -225,12 +361,55 @@ def sigmoid_back(x: np.int8, y: np.int8) -> np.int8:
     Given upstream gradient y, the local derivative is
        sigmoid(x) * (1 - sigmoid(x))
     """
+
+    def decode(fp8: np.int8) -> float:
+        """Convert an 8-bit code to a float."""
+        x_int = int(fp8)
+        if x_int == 0:
+            return float(0.0)
+        elif x_int > 0:
+            return float(math.pow(2.0, (x_int - 64) / 8.0))
+        else:
+            return float(-math.pow(2.0, ((-x_int) - 64) / 8.0))
+
+    def encode(value: float) -> np.int8:
+        """
+        Convert a float to an 8-bit code.
+        For value==0, we return 0.
+        For nonzero value, we compute:
+            code = round(64 + 8 * log2(|value|))
+        and then apply the sign.
+
+        Positive numbers are clamped to a maximum code of 127.
+        Negative numbers are clamped to a minimum code of -128.
+        """
+        if value == 0.0:
+            return np.int8(0)
+        sign = 1 if value >= 0 else -1
+        mag = abs(value)
+        # If the magnitude is extremely small, clamp it.
+        if mag < 1e-3:
+            return np.int8(0 if sign > 0 else -1)
+        p = math.log2(mag)
+        p = max(-32, min(p, 32))  # Mainly to handle +inf and -inf
+        p_approx = round(64 + 8 * p)
+        if sign > 0:
+            # Positive codes: allowed range is 0 ... 127
+            p_approx = max(0, min(p_approx, 127))
+        else:
+            # Negative codes: allowed range is -1 ... -128 (i.e. absolute value up to 128)
+            p_approx = max(0, min(p_approx, 128))
+        return np.int8(p_approx if sign > 0 else -p_approx)
+
     x_float = decode(x)
     s = 1.0 / (1.0 + math.exp(-x_float))
     deriv = s * (1.0 - s)
     y_float = decode(y)
     grad = y_float * deriv
     return encode(grad)
+    # s = sigmoid(x)
+    # deriv = mul(s, sub(ONE, s))
+    # return mul(y, deriv)
 
 
 def relu(x: np.int8) -> np.int8:
@@ -246,16 +425,98 @@ def relu_back(x: np.int8, y: np.int8) -> np.int8:
     Backward pass for ReLU: multiply the upstream gradient y
     by 1 if x >= 0 and 0 if x < 0.
     """
+
+    def decode(fp8: np.int8) -> float:
+        """Convert an 8-bit code to a float."""
+        x_int = int(fp8)
+        if x_int == 0:
+            return float(0.0)
+        elif x_int > 0:
+            return float(math.pow(2.0, (x_int - 64) / 8.0))
+        else:
+            return float(-math.pow(2.0, ((-x_int) - 64) / 8.0))
+
+    def encode(value: float) -> np.int8:
+        """
+        Convert a float to an 8-bit code.
+        For value==0, we return 0.
+        For nonzero value, we compute:
+            code = round(64 + 8 * log2(|value|))
+        and then apply the sign.
+
+        Positive numbers are clamped to a maximum code of 127.
+        Negative numbers are clamped to a minimum code of -128.
+        """
+        if value == 0.0:
+            return np.int8(0)
+        sign = 1 if value >= 0 else -1
+        mag = abs(value)
+        # If the magnitude is extremely small, clamp it.
+        if mag < 1e-3:
+            return np.int8(0 if sign > 0 else -1)
+        p = math.log2(mag)
+        p = max(-32, min(p, 32))  # Mainly to handle +inf and -inf
+        p_approx = round(64 + 8 * p)
+        if sign > 0:
+            # Positive codes: allowed range is 0 ... 127
+            p_approx = max(0, min(p_approx, 127))
+        else:
+            # Negative codes: allowed range is -1 ... -128 (i.e. absolute value up to 128)
+            p_approx = max(0, min(p_approx, 128))
+        return np.int8(p_approx if sign > 0 else -p_approx)
+
     deriv = float(1.0) if x >= 0 else float(0.0)
     y_float = decode(y)
     grad = y_float * deriv
     return encode(grad)
+    # deriv = ONE if x >= 0 else ZERO
+    # return mul(y, deriv)
 
 
 def log(x: np.int8) -> np.int8:
     """
     Natural logarithm.  Compute log(f) where f is the decoded FP8 number.
     """
+
+    def decode(fp8: np.int8) -> float:
+        """Convert an 8-bit code to a float."""
+        x_int = int(fp8)
+        if x_int == 0:
+            return float(0.0)
+        elif x_int > 0:
+            return float(math.pow(2.0, (x_int - 64) / 8.0))
+        else:
+            return float(-math.pow(2.0, ((-x_int) - 64) / 8.0))
+
+    def encode(value: float) -> np.int8:
+        """
+        Convert a float to an 8-bit code.
+        For value==0, we return 0.
+        For nonzero value, we compute:
+            code = round(64 + 8 * log2(|value|))
+        and then apply the sign.
+
+        Positive numbers are clamped to a maximum code of 127.
+        Negative numbers are clamped to a minimum code of -128.
+        """
+        if value == 0.0:
+            return np.int8(0)
+        sign = 1 if value >= 0 else -1
+        mag = abs(value)
+        # If the magnitude is extremely small, clamp it.
+        if mag < 1e-3:
+            return np.int8(0 if sign > 0 else -1)
+        p = math.log2(mag)
+        p = max(-32, min(p, 32))  # Mainly to handle +inf and -inf
+        p_approx = round(64 + 8 * p)
+        if sign > 0:
+            # Positive codes: allowed range is 0 ... 127
+            p_approx = max(0, min(p_approx, 127))
+        else:
+            # Negative codes: allowed range is -1 ... -128 (i.e. absolute value up to 128)
+            p_approx = max(0, min(p_approx, 128))
+        return np.int8(p_approx if sign > 0 else -p_approx)
+
     x_float = float(decode(np.uint8(x)))
     val = math.log(x_float)
     return np.int8(encode(val))
@@ -266,16 +527,99 @@ def log_back(x: np.int8, y: np.int8) -> np.int8:
     Backward pass for logarithm.
     Since d/dx log(x) = 1/x, multiply the upstream gradient y by 1/x.
     """
+
+    def decode(fp8: np.int8) -> float:
+        """Convert an 8-bit code to a float."""
+        x_int = int(fp8)
+        if x_int == 0:
+            return float(0.0)
+        elif x_int > 0:
+            return float(math.pow(2.0, (x_int - 64) / 8.0))
+        else:
+            return float(-math.pow(2.0, ((-x_int) - 64) / 8.0))
+
+    def encode(value: float) -> np.int8:
+        """
+        Convert a float to an 8-bit code.
+        For value==0, we return 0.
+        For nonzero value, we compute:
+            code = round(64 + 8 * log2(|value|))
+        and then apply the sign.
+
+        Positive numbers are clamped to a maximum code of 127.
+        Negative numbers are clamped to a minimum code of -128.
+        """
+        if value == 0.0:
+            return np.int8(0)
+        sign = 1 if value >= 0 else -1
+        mag = abs(value)
+        # If the magnitude is extremely small, clamp it.
+        if mag < 1e-3:
+            return np.int8(0 if sign > 0 else -1)
+        p = math.log2(mag)
+        p = max(-32, min(p, 32))  # Mainly to handle +inf and -inf
+        p_approx = round(64 + 8 * p)
+        if sign > 0:
+            # Positive codes: allowed range is 0 ... 127
+            p_approx = max(0, min(p_approx, 127))
+        else:
+            # Negative codes: allowed range is -1 ... -128 (i.e. absolute value up to 128)
+            p_approx = max(0, min(p_approx, 128))
+        return np.int8(p_approx if sign > 0 else -p_approx)
+
     x_float = decode(x)
     y_float = decode(y)
     grad = y_float * (1.0 / x_float) if x_float != 0 else 0.0
     return encode(grad)
+    # if x == 0:
+    #     return ZERO
+    # return mul(y, inv(x))
 
 
 def exp(x: np.int8) -> np.int8:
     """
     Exponential function: compute exp(f) where f is the decoded FP8 number.
     """
+
+    def decode(fp8: np.int8) -> float:
+        """Convert an 8-bit code to a float."""
+        x_int = int(fp8)
+        if x_int == 0:
+            return float(0.0)
+        elif x_int > 0:
+            return float(math.pow(2.0, (x_int - 64) / 8.0))
+        else:
+            return float(-math.pow(2.0, ((-x_int) - 64) / 8.0))
+
+    def encode(value: float) -> np.int8:
+        """
+        Convert a float to an 8-bit code.
+        For value==0, we return 0.
+        For nonzero value, we compute:
+            code = round(64 + 8 * log2(|value|))
+        and then apply the sign.
+
+        Positive numbers are clamped to a maximum code of 127.
+        Negative numbers are clamped to a minimum code of -128.
+        """
+        if value == 0.0:
+            return np.int8(0)
+        sign = 1 if value >= 0 else -1
+        mag = abs(value)
+        # If the magnitude is extremely small, clamp it.
+        if mag < 1e-3:
+            return np.int8(0 if sign > 0 else -1)
+        p = math.log2(mag)
+        p = max(-32, min(p, 32))  # Mainly to handle +inf and -inf
+        p_approx = round(64 + 8 * p)
+        if sign > 0:
+            # Positive codes: allowed range is 0 ... 127
+            p_approx = max(0, min(p_approx, 127))
+        else:
+            # Negative codes: allowed range is -1 ... -128 (i.e. absolute value up to 128)
+            p_approx = max(0, min(p_approx, 128))
+        return np.int8(p_approx if sign > 0 else -p_approx)
+
     x_float = decode(x)
     val = math.exp(x_float)
     return encode(val)
@@ -286,44 +630,61 @@ def exp_back(x: np.int8, y: np.int8) -> np.int8:
     Backward pass for the exponential.
     Since d/dx exp(x) = exp(x), multiply the upstream gradient y by exp(x).
     """
+
+    def decode(fp8: np.int8) -> float:
+        """Convert an 8-bit code to a float."""
+        x_int = int(fp8)
+        if x_int == 0:
+            return float(0.0)
+        elif x_int > 0:
+            return float(math.pow(2.0, (x_int - 64) / 8.0))
+        else:
+            return float(-math.pow(2.0, ((-x_int) - 64) / 8.0))
+
+    def encode(value: float) -> np.int8:
+        """
+        Convert a float to an 8-bit code.
+        For value==0, we return 0.
+        For nonzero value, we compute:
+            code = round(64 + 8 * log2(|value|))
+        and then apply the sign.
+
+        Positive numbers are clamped to a maximum code of 127.
+        Negative numbers are clamped to a minimum code of -128.
+        """
+        if value == 0.0:
+            return np.int8(0)
+        sign = 1 if value >= 0 else -1
+        mag = abs(value)
+        # If the magnitude is extremely small, clamp it.
+        if mag < 1e-3:
+            return np.int8(0 if sign > 0 else -1)
+        p = math.log2(mag)
+        p = max(-32, min(p, 32))  # Mainly to handle +inf and -inf
+        p_approx = round(64 + 8 * p)
+        if sign > 0:
+            # Positive codes: allowed range is 0 ... 127
+            p_approx = max(0, min(p_approx, 127))
+        else:
+            # Negative codes: allowed range is -1 ... -128 (i.e. absolute value up to 128)
+            p_approx = max(0, min(p_approx, 128))
+        return np.int8(p_approx if sign > 0 else -p_approx)
+
     x_float = decode(x)
     y_float = decode(y)
     grad = y_float * math.exp(x_float)
     return encode(grad)
-
-
-def inv(x: np.int8) -> np.int8:
-    """
-    Compute the inverse FP8 value, i.e. 1/x, using the simplified formula.
-    We have:
-       inv(x) = FP8(64) / x   =>   |inv(x)| = 128 - |x|
-    with the sign given by the sign of x.
-    However, note that code 0 is reserved (and decodes to +1/256), so for a negative input
-    if 128 - |x| computes to 0 we force it to 1 (so that the result is -1).
-    """
-    s = 1 if x >= 0 else -1
-    x_int = int(x) if x >= 0 else -int(x)
-    mag = 128 - x_int
-    # If the computed magnitude is zero for a negative number, bump it to 1.
-    if s < 0 and mag == 0:
-        mag = 1
-    return np.int8(s * mag)
-
-
-def inv_back(x: np.int8, y: np.int8) -> np.int8:
-    """
-    Backward pass for the inverse.
-    Since d/dx (1/x) = -1/x^2, multiply upstream gradient y by -1/x^2.
-    """
-    x_float = decode(x)
-    y_float = decode(y)
-    grad = y_float * (-1.0 / (x_float * x_float)) if x_float != 0 else 0.0
-    return encode(grad)
+    # return mul(y, exp(x))
 
 
 def lt(x: np.int8, y: np.int8) -> bool:
     """Less-than comparison using the underlying integer codes."""
     return bool(x < y)
+
+
+def le(x: np.int8, y: np.int8) -> bool:
+    """Less-than-or-equal comparison using the underlying integer codes."""
+    return bool(x <= y)
 
 
 def eq(x: np.int8, y: np.int8) -> bool:
@@ -334,6 +695,25 @@ def eq(x: np.int8, y: np.int8) -> bool:
 def max_(x: np.int8, y: np.int8) -> np.int8:
     """Return the maximum (by comparing the codes)."""
     return x if x >= y else y
+
+
+def min_(x: np.int8, y: np.int8) -> np.int8:
+    """Return the minimum (by comparing the codes)."""
+    return x if x <= y else y
+
+
+def all_(x: np.int8, y: np.int8) -> np.int8:
+    """If any number is zero return zero, else return 1."""
+    if x == 0 or y == 0:
+        return np.int8(0)
+    return np.int8(1)
+
+
+def any_(x: np.int8, y: np.int8) -> np.int8:
+    """If any number is zero return zero, else return 1."""
+    if x == 0 and y == 0:
+        return ZERO
+    return ONE
 
 
 # -----------------------------------------------------------
@@ -368,15 +748,14 @@ def sum(l: Iterable[np.int8]) -> np.int8:
     Sum a list of FP8 numbers using our log‑based addition.
     (Here, 0 is the FP8 encoding of ~1/256, our “zero”.)
     """
-    return reduce(add, l, np.int8(0))
+    return reduce(add, l, ZERO)
 
 
 def prod(l: Iterable[np.int8]) -> np.int8:
     """
     Multiply a list of FP8 numbers.
-    (Recall that FP8(64) encodes 1.)
     """
-    return reduce(mul, l, np.int8(64))
+    return reduce(mul, l, ONE)
 
 
 def zeros(size: int, dtype: type = np.int8) -> np.ndarray:

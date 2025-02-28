@@ -11,7 +11,13 @@ T = TypeVar("T", float, np.int8)
 
 dtype = None
 encode = None
+decode = None
 
+ONE = None
+ZERO = None
+ATOL = None
+RTOL = None
+EPSILON = None
 
 def mul(x: T, y: T) -> T:
     raise NotImplementedError
@@ -77,11 +83,23 @@ def lt(x: T, y: T) -> bool:
     raise NotImplementedError
 
 
+def le(x: T, y: T) -> bool:
+    raise NotImplementedError
+
+
 def eq(x: T, y: T) -> bool:
     raise NotImplementedError
 
 
 def max_(x: T, y: T) -> T:
+    raise NotImplementedError
+
+
+def min_(x: T, y: T) -> T:
+    raise NotImplementedError
+
+
+def any_(x: T, y: T) -> T:
     raise NotImplementedError
 
 

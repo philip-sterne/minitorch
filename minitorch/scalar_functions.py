@@ -193,6 +193,18 @@ class LT(ScalarFunction):
         return (dtype(0), dtype(0))
 
 
+class LE(ScalarFunction):
+    "Less-than-or-equal function $f(x) =$ 1.0 if x is less than or equal to y else 0.0"
+
+    @staticmethod
+    def forward(ctx: Context, a: dtype, b: dtype) -> dtype:
+        return dtype(ops.le(a, b))
+
+    @staticmethod
+    def backward(ctx: Context, d_output: dtype) -> Tuple[dtype, dtype]:
+        return (dtype(0), dtype(0))
+    
+
 class EQ(ScalarFunction):
     "Equal function $f(x) =$ 1.0 if x is equal to y else 0.0"
 

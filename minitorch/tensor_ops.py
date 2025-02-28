@@ -23,6 +23,8 @@ if TYPE_CHECKING:
 operators = precision.CURRENT_PRECISION
 dtype = operators.dtype
 encode = operators.encode
+ONE = operators.ONE
+ZERO = operators.ZERO
 
 
 class MapProto(Protocol):
@@ -79,11 +81,14 @@ class TensorBackend:
         self.id_map = ops.map(operators.id)
         self.id_cmap = ops.cmap(operators.id)
         self.inv_map = ops.map(operators.inv)
+        self.encode_map = ops.map(operators.encode)
+        self.decode_map = ops.map(operators.decode)
 
         # Zips
         self.add_zip = ops.zip(operators.add)
         self.mul_zip = ops.zip(operators.mul)
         self.lt_zip = ops.zip(operators.lt)
+        self.le_zip = ops.zip(operators.le)
         self.eq_zip = ops.zip(operators.eq)
         self.is_close_zip = ops.zip(operators.is_close)
         self.relu_back_zip = ops.zip(operators.relu_back)
@@ -91,9 +96,12 @@ class TensorBackend:
         self.inv_back_zip = ops.zip(operators.inv_back)
 
         # Reduce
-        self.add_reduce = ops.reduce(operators.add, encode(0.0))
-        self.mul_reduce = ops.reduce(operators.mul, encode(1.0))
+        self.add_reduce = ops.reduce(operators.add, ZERO)
+        self.mul_reduce = ops.reduce(operators.mul, ONE)
         self.max_reduce = ops.reduce(operators.max_, encode(-np.inf))
+        self.min_reduce = ops.reduce(operators.min_, encode(np.inf))
+        self.any_reduce = ops.reduce(operators.any_, ZERO)
+        self.all_reduce = ops.reduce(operators.all_, ONE)
 
         self.matrix_multiply = ops.matrix_multiply
         self.cuda = ops.cuda
@@ -217,8 +225,12 @@ class SimpleOps(TensorOps):
         def ret(a: "Tensor", dim: int) -> "Tensor":
             out_shape = list(a.shape)
             if dim >= len(out_shape):
-                import pdb; pdb.set_trace()
-                raise IndexError(f"Dimension {dim} is out of bounds for tensor of shape {a.shape}")
+                import pdb
+
+                pdb.set_trace()
+                raise IndexError(
+                    f"Dimension {dim} is out of bounds for tensor of shape {a.shape}"
+                )
             out_shape[dim] = 1
 
             # Other values when not sum.

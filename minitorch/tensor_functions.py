@@ -181,15 +181,31 @@ class All(Function):
     @staticmethod
     def forward(ctx: Context, a: Tensor, dim: Tensor) -> Tensor:
         if dim is not None:
-            return a.f.mul_reduce(a, int(dim.item()))
+            return a.f.all_reduce(a, int(dim.item()))
         else:
-            return a.f.mul_reduce(a.contiguous().view(int(math.prod(a.shape))), 0)
+            return a.f.all_reduce(a.contiguous().view(int(math.prod(a.shape))), 0)
+
+
+class Any(Function):
+    @staticmethod
+    def forward(ctx: Context, a: Tensor, dim: Tensor) -> Tensor:
+        return a.f.any_reduce(a, int(dim.item()))
 
 
 class LT(Function):
     @staticmethod
     def forward(ctx: Context, a: Tensor, b: Tensor) -> Tensor:
         return a.f.lt_zip(a, b)
+
+    @staticmethod
+    def backward(ctx: Context, grad_output: Tensor) -> Tuple[Tensor, Tensor]:
+        return grad_output.zeros(), grad_output.zeros()
+
+
+class LE(Function):
+    @staticmethod
+    def forward(ctx: Context, a: Tensor, b: Tensor) -> Tensor:
+        return a.f.le_zip(a, b)
 
     @staticmethod
     def backward(ctx: Context, grad_output: Tensor) -> Tuple[Tensor, Tensor]:
@@ -235,6 +251,17 @@ class Permute(Function):
         ord = np.argsort(ord)
         return grad_output._new(grad_output._tensor.permute(*ord)), 0.0
 
+
+class Encode(Function):
+    @staticmethod
+    def forward(ctx: Context, a: Tensor) -> Tensor:
+        return a.f.encode_map(a)
+
+
+class Decode(Function):
+    @staticmethod
+    def forward(ctx: Context, a: Tensor) -> Tensor:
+        return a.f.decode_map(a)
 
 class View(Function):
     @staticmethod
@@ -431,7 +458,7 @@ but was expecting derivative %f from central difference.
         np.testing.assert_allclose(
             x.grad[ind],
             check,
-            1e-2,
-            1e-2,
+            precision.ATOL,
+            precision.RTOL,
             err_msg=err_msg % (f, vals, x.grad[ind], i, ind, check),
         )

@@ -1,8 +1,15 @@
+import math
 import numpy as np
 from .numeric_precision import *
 
 dtype = float
 encode = float
+decode = float
+ONE = 1.0
+ZERO = 0.0
+RTOL = 1e-2
+ATOL = 1e-2
+EPSILON = math.ulp(0.5)
 
 
 def id(x: float) -> float:
@@ -65,12 +72,32 @@ def inv_back(x: float, y: float) -> float:
     return -y / (x * x)
 
 
-def max_(x: float, y: float) -> float:  # type: ignore
+def max_(x: float, y: float) -> float:
     return float(x) if x > y else float(y)
+
+
+def min_(x: float, y: float) -> float:
+    return x if x <= y else y
+
+
+def all_(x: float, y: float) -> float:
+    if x == 0 or y == 0:
+        return float(0)
+    return float(1)
+
+
+def any_(x: float, y: float) -> float:
+    if x == 0 and y == 0:
+        return float(0)
+    return float(1)
 
 
 def lt(x: float, y: float) -> bool:
     return x < y
+
+
+def le(x: float, y: float) -> bool:
+    return x <= y
 
 
 def eq(x: float, y: float) -> bool:
