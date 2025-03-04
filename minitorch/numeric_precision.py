@@ -9,6 +9,16 @@ T = TypeVar("T", float, np.int8)
 # but you will not need to edit this file.
 
 
+dtype = None
+encode = None
+decode = None
+
+ONE = None
+ZERO = None
+ATOL = None
+RTOL = None
+EPSILON = None
+
 def mul(x: T, y: T) -> T:
     raise NotImplementedError
 
@@ -73,6 +83,10 @@ def lt(x: T, y: T) -> bool:
     raise NotImplementedError
 
 
+def le(x: T, y: T) -> bool:
+    raise NotImplementedError
+
+
 def eq(x: T, y: T) -> bool:
     raise NotImplementedError
 
@@ -80,7 +94,17 @@ def eq(x: T, y: T) -> bool:
 def max_(x: T, y: T) -> T:
     raise NotImplementedError
 
+
+def min_(x: T, y: T) -> T:
+    raise NotImplementedError
+
+
+def any_(x: T, y: T) -> T:
+    raise NotImplementedError
+
+
 # Functional programming functions
+
 
 def map(fn: Callable[[T], T], l: Iterable[T]) -> Iterable[T]:
     raise NotImplementedError
@@ -101,10 +125,13 @@ def sum(l: Iterable[T]) -> T:
 def prod(l: Iterable[T]) -> T:
     raise NotImplementedError
 
+
 # Array creation functions
 
-def zeros(shape: Iterable[int], dtype: Type[T]) -> np.ndarray:
+
+def zeros(size: int, dtype: Type[T]) -> np.ndarray:
     raise NotImplementedError
 
-def rand(shape: Iterable[int], dtype: Type[T]) -> np.ndarray:
+
+def rand(size: int, dtype: Type[T]) -> np.ndarray:
     raise NotImplementedError

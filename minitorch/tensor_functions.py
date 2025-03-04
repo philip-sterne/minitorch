@@ -181,15 +181,31 @@ class All(Function):
     @staticmethod
     def forward(ctx: Context, a: Tensor, dim: Tensor) -> Tensor:
         if dim is not None:
-            return a.f.mul_reduce(a, int(dim.item()))
+            return a.f.all_reduce(a, int(dim.item()))
         else:
-            return a.f.mul_reduce(a.contiguous().view(int(math.prod(a.shape))), 0)
+            return a.f.all_reduce(a.contiguous().view(int(math.prod(a.shape))), 0)
+
+
+class Any(Function):
+    @staticmethod
+    def forward(ctx: Context, a: Tensor, dim: Tensor) -> Tensor:
+        return a.f.any_reduce(a, int(dim.item()))
 
 
 class LT(Function):
     @staticmethod
     def forward(ctx: Context, a: Tensor, b: Tensor) -> Tensor:
         return a.f.lt_zip(a, b)
+
+    @staticmethod
+    def backward(ctx: Context, grad_output: Tensor) -> Tuple[Tensor, Tensor]:
+        return grad_output.zeros(), grad_output.zeros()
+
+
+class LE(Function):
+    @staticmethod
+    def forward(ctx: Context, a: Tensor, b: Tensor) -> Tensor:
+        return a.f.le_zip(a, b)
 
     @staticmethod
     def backward(ctx: Context, grad_output: Tensor) -> Tuple[Tensor, Tensor]:
@@ -236,6 +252,17 @@ class Permute(Function):
         return grad_output._new(grad_output._tensor.permute(*ord)), 0.0
 
 
+class Encode(Function):
+    @staticmethod
+    def forward(ctx: Context, a: Tensor) -> Tensor:
+        return a.f.encode_map(a)
+
+
+class Decode(Function):
+    @staticmethod
+    def forward(ctx: Context, a: Tensor) -> Tensor:
+        return a.f.decode_map(a)
+
 class View(Function):
     @staticmethod
     def forward(ctx: Context, a: Tensor, shape: Tensor) -> Tensor:
@@ -243,7 +270,7 @@ class View(Function):
         assert a._tensor.is_contiguous(), "Must be contiguous to view"
         shape2 = [int(shape[i]) for i in range(shape.size)]
         return minitorch.Tensor.make(
-            a._tensor._storage, tuple(shape2), backend=a.backend
+            a._tensor._storage, tuple(shape2), backend=a.backend, encode=False
         )
 
     @staticmethod
@@ -251,7 +278,10 @@ class View(Function):
         (original,) = ctx.saved_values
         return (
             minitorch.Tensor.make(
-                grad_output._tensor._storage, original, backend=grad_output.backend
+                grad_output._tensor._storage,
+                original,
+                backend=grad_output.backend,
+                encode=False,
             ),
             0.0,
         )
@@ -300,8 +330,8 @@ def zeros(shape: UserShape, backend: TensorBackend = SimpleBackend) -> Tensor:
     Returns:
         new tensor
     """
-    vals = precision.zeros(shape)
-    return minitorch.Tensor.make(vals, shape, backend=backend)
+    vals = precision.zeros(math.prod(shape))
+    return minitorch.Tensor.make(vals, shape, backend=backend, encode=False)
 
 
 def rand(
@@ -320,8 +350,8 @@ def rand(
     Returns:
         :class:`Tensor` : new tensor
     """
-    vals = precision.rand(shape)
-    tensor = minitorch.Tensor.make(vals, shape, backend=backend)
+    vals = precision.rand(math.prod(shape))
+    tensor = minitorch.Tensor.make(vals, shape, backend=backend, encode=False)
     tensor.requires_grad_(requires_grad)
     return tensor
 
@@ -331,6 +361,7 @@ def _tensor(
     shape: UserShape,
     backend: TensorBackend = SimpleBackend,
     requires_grad: bool = False,
+    encode: bool = True,
 ) -> Tensor:
     """
     Produce a tensor with data ls and shape `shape`.
@@ -344,13 +375,16 @@ def _tensor(
     Returns:
         new tensor
     """
-    tensor = minitorch.Tensor.make(ls, shape, backend=backend)
+    tensor = minitorch.Tensor.make(ls, shape, backend=backend, encode=encode)
     tensor.requires_grad_(requires_grad)
     return tensor
 
 
 def tensor(
-    ls: Any, backend: TensorBackend = SimpleBackend, requires_grad: bool = False
+    ls: Any,
+    backend: TensorBackend = SimpleBackend,
+    requires_grad: bool = False,
+    encode: bool = True,
 ) -> Tensor:
     """
     Produce a tensor with data and shape from ls
@@ -378,7 +412,9 @@ def tensor(
 
     cur = flatten(ls)
     shape2 = shape(ls)
-    return _tensor(cur, tuple(shape2), backend=backend, requires_grad=requires_grad)
+    return _tensor(
+        cur, tuple(shape2), backend=backend, requires_grad=requires_grad, encode=encode
+    )
 
 
 # Gradient check for tensors
@@ -422,7 +458,7 @@ but was expecting derivative %f from central difference.
         np.testing.assert_allclose(
             x.grad[ind],
             check,
-            1e-2,
-            1e-2,
+            precision.ATOL,
+            precision.RTOL,
             err_msg=err_msg % (f, vals, x.grad[ind], i, ind, check),
         )

@@ -15,9 +15,13 @@ from .tensor_data import TensorData
 from .tensor_functions import (
     EQ,
     LT,
+    LE,
     Add,
     All,
+    Any,
     Copy,
+    Decode,
+    Encode,
     Exp,
     Inv,
     IsClose,
@@ -32,6 +36,7 @@ from .tensor_functions import (
     View,
     tensor,
 )
+from .tensor_functions import zeros as tf_zeros
 
 if TYPE_CHECKING:
     from typing import Any, Iterable, List, Optional, Sequence, Tuple, Type, Union
@@ -134,10 +139,15 @@ class Tensor:
         """
         return self._tensor.dims
 
-    def _ensure_tensor(self, b: TensorLike) -> Tensor:
-        "Turns a python number into a tensor with the same backend."
+    def _ensure_tensor(self, b: TensorLike, encode: bool = True) -> Tensor:
+        """Turns a python number into a tensor with the same backend.
+
+        Please note the following behaviour:
+        - If b is already an array, it is not encoded (regardless of the encode argument)
+        - If b is a float or int, it is encoded if encode is True, otherwise it is not encoded.
+        """
         if isinstance(b, (int, float)):
-            c = Tensor.make([b], (1,), backend=self.backend)
+            c = Tensor.make([b], (1,), backend=self.backend, encode=encode)
         else:
             b._type_(self.backend)
             c = b
@@ -146,9 +156,15 @@ class Tensor:
     # Functions
     def __add__(self, b: TensorLike) -> Tensor:
         return Add.apply(self, self._ensure_tensor(b))
+    
+    def __radd__(self, b: TensorLike) -> Tensor:
+        return Add.apply(self._ensure_tensor(b), self)
 
     def __sub__(self, b: TensorLike) -> Tensor:
-        return Add.apply(self, -self._ensure_tensor(b))
+        return Add.apply(self, Neg.apply(self._ensure_tensor(b)))
+    
+    def __rsub__(self, b: TensorLike) -> Tensor:
+        return Add.apply(self._ensure_tensor(b), Neg.apply(self))
 
     def __mul__(self, b: TensorLike) -> Tensor:
         return Mul.apply(self, self._ensure_tensor(b))
@@ -160,11 +176,13 @@ class Tensor:
         return Mul.apply(self._ensure_tensor(b), Inv.apply(self))
 
     def __matmul__(self, b: Tensor) -> Tensor:
-        "Not used until Module 3"
         return MatMul.apply(self, b)
 
     def __lt__(self, b: TensorLike) -> Tensor:
         return LT.apply(self, self._ensure_tensor(b))
+
+    def __le__(self, b: TensorLike) -> Tensor:
+        return LE.apply(self, self._ensure_tensor(b))
 
     def __eq__(self, b: TensorLike) -> Tensor:  # type: ignore[override]
         return EQ.apply(self, self._ensure_tensor(b))
@@ -183,9 +201,15 @@ class Tensor:
 
     def all(self, dim: Optional[int] = None) -> Tensor:
         if dim is None:
-            return All.apply(self.view(self.size), self._ensure_tensor(0))
+            return All.apply(self.view(self.size), self._ensure_tensor(0, encode=False))
         else:
-            return All.apply(self, self._ensure_tensor(dim))
+            return All.apply(self, self._ensure_tensor(dim, encode=False))
+
+    def any(self, dim: Optional[int] = None) -> Tensor:
+        if dim is None:
+            return Any.apply(self.view(self.size), self._ensure_tensor(0, encode=False))
+        else:
+            return Any.apply(self, self._ensure_tensor(dim, encode=False))
 
     def is_close(self, y: Tensor) -> Tensor:
         return IsClose.apply(self, y)
@@ -206,13 +230,16 @@ class Tensor:
         """Convert a 1-element tensor to a float"""
         assert self.size == 1
         return self._tensor._storage[0]
+        # return self[0]
 
     def sum(self, dim: Optional[int] = None) -> Tensor:
         "Compute the sum over dimension `dim`"
         if dim is None:
-            return Sum.apply(self.contiguous().view(self.size), self._ensure_tensor(0))
+            return Sum.apply(
+                self.contiguous().view(self.size), self._ensure_tensor(0, encode=False)
+            )
         else:
-            return Sum.apply(self, self._ensure_tensor(dim))
+            return Sum.apply(self, self._ensure_tensor(dim, encode=False))
 
     def mean(self, dim: Optional[int] = None) -> Tensor:
         "Compute the mean over dimension `dim`"
@@ -223,14 +250,17 @@ class Tensor:
 
     def permute(self, *order: int) -> Tensor:
         "Permute tensor dimensions to *order"
-        return Permute.apply(self, tensor(list(order)))
+        return Permute.apply(self, tensor(list(order), encode=False))
 
     def view(self, *shape: int) -> Tensor:
         "Change the shape of the tensor to a new shape with the same size"
-        return View.apply(self, tensor(list(shape)))
+        if math.prod(shape) != self.size:
+            raise ValueError(f"Cannot view {self.shape} as {shape}")
+        return View.apply(self, tensor(list(shape), encode=False))
 
     def contiguous(self) -> Tensor:
         """Return a contiguous tensor with the same data"""
+        # TODO: Check if the memory is already contiguous
         return Copy.apply(self)
 
     def __repr__(self) -> str:
@@ -252,6 +282,12 @@ class Tensor:
 
     def _new(self, tensor_data: TensorData) -> Tensor:
         return Tensor(tensor_data, backend=self.backend)
+    
+    def encode(self) -> Tensor:
+        return Encode.apply(self)
+    
+    def decode(self) -> Tensor:
+        return Decode.apply(self)
 
     @staticmethod
     def make(
@@ -259,9 +295,11 @@ class Tensor:
         shape: UserShape,
         strides: Optional[UserStrides] = None,
         backend: Optional[TensorBackend] = None,
+        encode: bool = True,
     ) -> Tensor:
         "Create a new tensor from data"
-        return Tensor(TensorData(storage, shape, strides), backend=backend)
+        td = TensorData(storage, shape, strides, encode)
+        return Tensor(td, backend=backend)
 
     def expand(self, other: Tensor) -> Tensor:
         """
@@ -300,17 +338,9 @@ class Tensor:
         return Tensor.make(out._tensor._storage, self.shape, backend=self.backend)
 
     def zeros(self, shape: Optional[UserShape] = None) -> Tensor:
-        def zero(shape: UserShape) -> Tensor:
-            return Tensor.make(
-                [0.0] * int(math.prod(shape)), shape, backend=self.backend
-            )
-
         if shape is None:
-            out = zero(self.shape)
-        else:
-            out = zero(shape)
-        out._type_(self.backend)
-        return out
+            shape = self.shape
+        return tf_zeros(shape, backend=self.backend)
 
     def tuple(self) -> Tuple[Storage, Shape, Strides]:
         """Get the tensor data info as a tuple."""
@@ -332,7 +362,9 @@ class Tensor:
         """
         assert self.is_leaf(), "Only leaf variables can have derivatives."
         if self.grad is None:
-            self.grad = self.zeros()
+            self.grad = Tensor.make(
+                [0] * int(math.prod(self.shape)), self.shape, backend=self.backend
+            )
         self.grad += x
 
     def is_leaf(self) -> bool:

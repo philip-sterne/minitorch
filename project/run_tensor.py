@@ -4,7 +4,9 @@ Be sure you have minitorch installed in you Virtual Env.
 """
 
 import minitorch
+# import minitorch.ln8_precision as ln8
 
+precision = minitorch.CURRENT_PRECISION
 
 def RParam(*shape):
     r = 2 * (minitorch.rand(shape) - 0.5)
@@ -73,7 +75,9 @@ class TensorTrain:
 
             # Forward
             out = self.model.forward(X).view(data.N)
-            prob = (out * y) + (out - 1.0) * (y - 1.0)
+            # This is necessary because 8 bit floats often round to 0.
+            # (Which is bad for log(0))
+            prob = (out * y) + (-out + 1.0) * (-y + 1.0) + precision.EPSILON
 
             loss = -prob.log()
             (loss / data.N).sum().view(1).backward()
@@ -86,7 +90,7 @@ class TensorTrain:
             # Logging
             if epoch % 2 == 0 or epoch == max_epochs:
                 y2 = minitorch.tensor(data.y)
-                correct = int(((out.detach() > 0.5) == y2).sum()[0])
+                correct = int(((out.detach() > 0.5).encode() == y2).sum()[0])
                 log_fn(epoch, total_loss, correct, losses)
 
 

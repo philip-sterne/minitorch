@@ -12,6 +12,7 @@ from minitorch import MathTestVariable, Tensor, TensorBackend, grad_check
 
 from .strategies import assert_close, small_floats
 from .tensor_strategies import assert_close_tensor, shaped_tensors, tensors
+from minitorch.precision import CURRENT_PRECISION as precision
 
 one_arg, two_arg, red_arg = MathTestVariable._comp_testing()
 
@@ -39,16 +40,13 @@ if numba.cuda.is_available():
     shared["cuda"] = minitorch.TensorBackend(minitorch.CudaOps)
 
 
-# ## Task 3.1 and 3.3
-
-
 @given(lists(small_floats, min_size=1))
 @pytest.mark.parametrize("backend", backend_tests)
-def test_create(backend: str, t1: List[float]) -> None:
+def test_create_encode(backend: str, t1: List[float]) -> None:
     """Create different tensors."""
-    t2 = minitorch.tensor(t1, backend=shared[backend])
+    t2 = minitorch.tensor(t1, backend=shared[backend], encode=True)
     for i in range(len(t1)):
-        assert t1[i] == t2[i]
+        assert precision.encode(t1[i]) == t2[i]
 
 
 @given(data())

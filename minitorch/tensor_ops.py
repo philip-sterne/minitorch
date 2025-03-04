@@ -21,7 +21,10 @@ if TYPE_CHECKING:
 
 
 operators = precision.CURRENT_PRECISION
-dtype = precision.CURRENT_TYPE
+dtype = operators.dtype
+encode = operators.encode
+ONE = operators.ONE
+ZERO = operators.ZERO
 
 
 class MapProto(Protocol):
@@ -30,21 +33,21 @@ class MapProto(Protocol):
 
 class TensorOps:
     @staticmethod
-    def map(fn: Callable[[dtype], dtype]) -> MapProto: # type: ignore
+    def map(fn: Callable[[dtype], dtype]) -> MapProto:  # type: ignore
         pass
 
     @staticmethod
-    def cmap(fn: Callable[[dtype], dtype]) -> Callable[[Tenssor, Tensor], Tensor]: # type: ignore
+    def cmap(fn: Callable[[dtype], dtype]) -> Callable[[Tenssor, Tensor], Tensor]:  # type: ignore
         pass
 
     @staticmethod
-    def zip(fn: Callable[[dtype, dtype], dtype]) -> Callable[[Tensor, Tensor], Tensor]: # type: ignore
+    def zip(fn: Callable[[dtype, dtype], dtype]) -> Callable[[Tensor, Tensor], Tensor]:  # type: ignore
         pass
 
     @staticmethod
     def reduce(
         fn: Callable[[dtype, dtype], dtype], start: dtype = dtype(0)
-    ) -> Callable[[Tensor, int], Tensor]: # type: ignore
+    ) -> Callable[[Tensor, int], Tensor]:  # type: ignore
         pass
 
     @staticmethod
@@ -78,11 +81,14 @@ class TensorBackend:
         self.id_map = ops.map(operators.id)
         self.id_cmap = ops.cmap(operators.id)
         self.inv_map = ops.map(operators.inv)
+        self.encode_map = ops.map(operators.encode)
+        self.decode_map = ops.map(operators.decode)
 
         # Zips
         self.add_zip = ops.zip(operators.add)
         self.mul_zip = ops.zip(operators.mul)
         self.lt_zip = ops.zip(operators.lt)
+        self.le_zip = ops.zip(operators.le)
         self.eq_zip = ops.zip(operators.eq)
         self.is_close_zip = ops.zip(operators.is_close)
         self.relu_back_zip = ops.zip(operators.relu_back)
@@ -90,9 +96,12 @@ class TensorBackend:
         self.inv_back_zip = ops.zip(operators.inv_back)
 
         # Reduce
-        self.add_reduce = ops.reduce(operators.add, dtype(0.0))
-        self.mul_reduce = ops.reduce(operators.mul, dtype(1.0))
-        self.max_reduce = ops.reduce(operators.max_, dtype(-np.inf))
+        self.add_reduce = ops.reduce(operators.add, ZERO)
+        self.mul_reduce = ops.reduce(operators.mul, ONE)
+        self.max_reduce = ops.reduce(operators.max_, encode(-np.inf))
+        self.min_reduce = ops.reduce(operators.min_, encode(np.inf))
+        self.any_reduce = ops.reduce(operators.any_, ZERO)
+        self.all_reduce = ops.reduce(operators.all_, ONE)
 
         self.matrix_multiply = ops.matrix_multiply
         self.cuda = ops.cuda
@@ -215,6 +224,13 @@ class SimpleOps(TensorOps):
 
         def ret(a: "Tensor", dim: int) -> "Tensor":
             out_shape = list(a.shape)
+            if dim >= len(out_shape):
+                import pdb
+
+                pdb.set_trace()
+                raise IndexError(
+                    f"Dimension {dim} is out of bounds for tensor of shape {a.shape}"
+                )
             out_shape[dim] = 1
 
             # Other values when not sum.
@@ -329,18 +345,22 @@ def tensor_zip(fn: Callable[[dtype, dtype], dtype]) -> Any:
         b_shape: Shape,
         b_strides: Strides,
     ) -> None:
-        out_index = np.array(out_shape)
-        a_index = np.array(a_shape)
-        b_index = np.array(b_shape)
+        out_index = np.zeros(len(out_shape), dtype=np.int32)
+        a_index = np.zeros(len(a_shape), dtype=np.int32)
+        b_index = np.zeros(len(b_shape), dtype=np.int32)
 
         for i in range(len(out)):
             to_index(i, out_shape, out_index)
             broadcast_index(out_index, out_shape, a_shape, a_index)
             broadcast_index(out_index, out_shape, b_shape, b_index)
-            x_a = a_storage[index_to_position(a_index, a_strides)]
-            x_b = b_storage[index_to_position(b_index, b_strides)]
-            y = fn(x_a, x_b)
-            out[index_to_position(out_index, out_strides)] = y
+
+            a_pos = index_to_position(a_index, a_strides)
+            b_pos = index_to_position(b_index, b_strides)
+            out_pos = index_to_position(out_index, out_strides)
+
+            ans = fn(a_storage[a_pos], b_storage[b_pos])
+
+            out[out_pos] = ans
 
     return _zip
 
